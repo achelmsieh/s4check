@@ -3,12 +3,12 @@
   ==========================================================================
   S/4 Check — analyse d'impact des notes SAP sur le code ABAP
 
-  Copyright (c) 2026 AEH. Tous droits reserves.
+  Copyright (c) 2026 Codilog. Tous droits reserves.
 
-  Ce logiciel est protege par le droit d'auteur. Il est remis a son
-  destinataire pour un usage interne uniquement.
+  Ce logiciel est protege par le droit d'auteur. Son usage est reserve a
+  Codilog, en interne.
 
-  Sont interdites, sauf autorisation ecrite prealable de l'auteur :
+  Sont interdites, sauf autorisation ecrite prealable de Codilog :
     - toute modification, adaptation ou creation d'oeuvre derivee
     - toute redistribution, mise a disposition ou publication
     - toute reutilisation de tout ou partie du code dans un autre produit
@@ -383,7 +383,13 @@ html[data-theme="dark"] .empty{background:rgba(255,255,255,.02)}
 html[data-theme="dark"] .btn:hover{background:#26262C;border-color:#45454E}
 html[data-theme="dark"] .fixPre{background:#191920}
 
-/* Selecteur de theme, aligne a droite de l'en-tete. */
+/* Bouton de retour d'experience, puis le selecteur de theme, tous deux
+   pousses a droite de l'en-tete. */
+.retour{margin-left:auto;font-size:12px;padding:4px 12px;text-decoration:none;
+        white-space:nowrap}
+.retour[hidden]{display:none}
+/* Sans bouton de retour, c'est le selecteur qui prend la marge automatique. */
+.retour:not([hidden]) ~ .themeSeg{margin-left:10px}
 .themeSeg{margin-left:auto}
 .themeSeg button{font-size:12px;padding:4px 10px;line-height:1.4}
 </style>
@@ -395,6 +401,8 @@ html[data-theme="dark"] .fixPre{background:#191920}
     <div class="masthead">
       <h1>S/4&nbsp;Check <span class="h1sub">— analyse d'impact des notes SAP</span></h1>
       <span class="sub"><b>2 278</b> modules fonction · <b>1 063</b> AFLE · <b>1 257</b> datatypes · <b>3 181</b> n° article · <b>500</b> champs ACDOCA · <b>748</b> structures</span>
+      <a class="btn retour" id="retour" href="https://docs.google.com/forms/d/e/1FAIpQLSd_m2orfM2seVfbK7OfSErbYdOIb6A0Sz9Ipohe488dGba03w/viewform" target="_blank"
+         rel="noopener noreferrer" hidden>Signaler un problème</a>
       <div class="seg themeSeg" id="themeSeg" role="group" aria-label="Thème">
         <button data-t="auto" aria-pressed="true" title="Suivre le système">Auto</button>
         <button data-t="light" aria-pressed="false" title="Thème clair">Clair</button>
@@ -576,9 +584,9 @@ html[data-theme="dark"] .fixPre{background:#191920}
   <kbd>/</kbd> pour chercher · <kbd>Échap</kbd> pour effacer · recherche insensible à la casse, sous-chaîne.
   Page autonome, aucune connexion réseau requise.
   <div class="legal">
-    © 2026 AEH — build 2026-08-30.
-    Usage interne autorisé. Modification, redistribution et réutilisation
-    soumises à autorisation écrite de l'auteur.
+    © 2026 Codilog — build 2026-08-30.
+    Usage interne réservé à Codilog. Modification, redistribution et
+    réutilisation soumises à autorisation écrite de Codilog.
   </div>
 </footer>
 
@@ -2934,6 +2942,13 @@ function renderCurrentTab(){
   else if (currentTab === 'acdoca') renderAcdoca();
   else if (currentTab === 'atc') renderAtc();
   else compute();
+}
+
+/* Retour d'experience. L'adresse du formulaire est posee au build ; sans
+   elle, le bouton reste absent plutot que de mener nulle part. */
+const $retour = document.getElementById('retour');
+if ($retour && /^https?:\/\//i.test($retour.getAttribute('href') || '')){
+  $retour.hidden = false;
 }
 
 const $noteBar = document.getElementById('noteBar');

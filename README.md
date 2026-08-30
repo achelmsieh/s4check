@@ -3,37 +3,31 @@
 Outil d'aide à la reprise du code ABAP pour la migration SAP S/4HANA.
 Page autonome : aucun serveur, aucune connexion réseau, rien n'est envoyé.
 
-**Site : https://<compte>.github.io/<depot>/**
+**Site : https://achelmsieh.github.io/s4check/**
 
-## Ce qui fonctionne immédiatement
+## Les quatre onglets
 
-| Onglet | État |
+| Onglet | À quoi ça sert |
 |---|---|
-| **Conversion ATC** | opérationnel — réécrit les instructions signalées par l'ATC |
-| **Recherche** | attend vos données |
-| **Analyse de code** | attend vos données |
-| **SELECT → ACDOCA** | attend vos données |
+| **Recherche** | Parcourir l'index par module fonction, paramètre ou data element. |
+| **Analyse de code** | Coller du code ABAP : les modules fonction sont détectés, les champs impactés surlignés, le pragma ATC généré. |
+| **SELECT → ACDOCA** | Réécrire un `SELECT` sur BSEG / BKPF / COEP / FAGLFLEXA vers ACDOCA, avec les avertissements ledger, signe et périmètre. |
+| **Conversion ATC** | Réécrire les instructions signalées par l'ATC, groupées par note. |
 
-L'onglet Conversion ATC couvre les notes 2610650 (montants), 2215424
-(numéro d'article) et la famille sans note (dépendance à l'ordre des lignes).
-Il n'a besoin d'aucune donnée externe.
+## Les notes couvertes
 
-## Charger vos données
+| Note | Sujet |
+|---|---|
+| 2628704 | AFLE — extension de longueur de champ |
+| 2438131 | Datatypes des paramètres de BAPI |
+| 2438006 | N° article 18 → 40, modules fonction locaux |
+| 2156822 | Mapping des champs vers ACDOCA |
+| 2610650 | Extension des champs montant (AFLE) |
+| 2215424 | Extension du n° article à 40 caractères |
+| *sans note* | Dépendance à l'ordre des lignes |
 
-Les onglets Recherche, Analyse et SELECT → ACDOCA s'appuient sur des données
-extraites de notes SAP. **Ce contenu n'est pas publié ici** : il provient de
-notes accessibles derrière authentification SAP, et n'a pas à figurer sur un
-site en libre accès.
-
-Chacun génère les siennes avec les scripts du projet, puis les charge depuis
-le bandeau en haut de la page :
-
-- `index.json`
-- `acdoca_fields.json`
-- `struct_fields.json`
-
-La lecture se fait **dans votre navigateur**. Les fichiers ne quittent pas
-votre poste et ne sont envoyés à personne.
+Chaque note s'active et se désactive depuis la barre sous les onglets.
+Survolez un numéro pour savoir ce qu'il couvre et ce qui reste manuel.
 
 ## Vérifier l'intégrité du fichier
 

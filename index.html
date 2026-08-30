@@ -1,0 +1,3175 @@
+<!DOCTYPE html>
+<!--
+  ==========================================================================
+  S/4 Check — analyse d'impact des notes SAP sur le code ABAP
+
+  Copyright (c) 2026 AEH. Tous droits reserves.
+
+  Ce logiciel est protege par le droit d'auteur. Il est remis a son
+  destinataire pour un usage interne uniquement.
+
+  Sont interdites, sauf autorisation ecrite prealable de l'auteur :
+    - toute modification, adaptation ou creation d'oeuvre derivee
+    - toute redistribution, mise a disposition ou publication
+    - toute reutilisation de tout ou partie du code dans un autre produit
+
+  Build : 2026-08-30
+  L'empreinte SHA-256 de la version authentique est fournie separement
+  (fichier .sha256). Un exemplaire dont l'empreinte differe a ete modifie.
+
+  Ce fichier contient des donnees extraites de notes SAP, materiel
+  proprietaire accessible derriere authentification : sa diffusion hors du
+  cercle des personnes disposant elles-memes d'un acces SAP n'est pas permise.
+  ==========================================================================
+-->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S/4 Check — analyse d'impact des notes SAP sur le code ABAP</title>
+<style>
+:root{
+  --paper:#FAF9F6; --card:#FFFFFF; --ink:#17171B; --ink-soft:#575550;
+  --ink-faint:#8D8A82; --rule:#E3E0D7; --rule-soft:#EFEDE6;
+  --afle:#2A4785; --afle-bg:#EDF1FA; --afle-soft:#DCE5F5;
+  --dtyp:#0C6851; --dtyp-bg:#E6F3EE; --dtyp-soft:#D2E9E0;
+  --fmod:#8A4B2A; --fmod-bg:#FBEFE8; --fmod-soft:#F0DCCE;
+  --warn:#8A5A00; --warn-bg:#FFF8E8; --warn-border:#EFD79A;
+  --fix:#6B3FA0; --fix-bg:#F5F1FB; --fix-border:#DCCEEE;
+  --del-bg:#FDECEC; --del-ink:#98342F;
+  --add-bg:#E9F5EC; --add-ink:#1F6B39;
+  --shadow-sm:0 1px 2px rgba(23,23,27,.05);
+  --shadow-md:0 1px 3px rgba(23,23,27,.06),0 6px 16px -6px rgba(23,23,27,.10);
+  --mono:ui-monospace,"Cascadia Mono","Consolas","DejaVu Sans Mono",monospace;
+  --edmono:"Cascadia Mono","Consolas","DejaVu Sans Mono",monospace;
+  --sans:ui-sans-serif,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
+     -webkit-font-smoothing:antialiased}
+.wrap{max-width:1600px;margin:0 auto;padding:0 24px}
+
+header{border-bottom:1px solid var(--rule);background:var(--paper);
+       position:sticky;top:0;z-index:10;transition:box-shadow .2s ease}
+header.scrolled{box-shadow:0 1px 0 var(--rule),0 8px 24px -16px rgba(23,23,27,.28)}
+.masthead{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;padding:16px 0 12px}
+h1{font-size:16px;font-weight:650;margin:0;letter-spacing:-.015em}
+.h1sub{font-weight:400;color:var(--ink-faint);letter-spacing:0}
+.sub{font-size:12.5px;color:var(--ink-faint)}
+.sub b{font-weight:600;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+
+.searchrow{display:flex;gap:10px;align-items:stretch;padding-bottom:12px}
+#q{flex:1;min-width:0;font-family:var(--mono);font-size:15px;padding:10px 13px;border:1px solid var(--rule);
+   border-radius:8px;background:var(--card);color:var(--ink);outline:none;box-shadow:var(--shadow-sm);
+   transition:border-color .15s ease,box-shadow .15s ease}
+#q:focus{border-color:var(--afle);box-shadow:0 0 0 3px var(--afle-bg)}
+#q::placeholder{color:var(--ink-faint)}
+.btn{font-family:var(--sans);font-size:13px;font-weight:500;padding:0 14px;border:1px solid var(--rule);
+     background:var(--card);color:var(--ink-soft);border-radius:8px;cursor:pointer;white-space:nowrap;
+     box-shadow:var(--shadow-sm);transition:border-color .15s ease,color .15s ease,background .15s ease}
+.btn:hover{border-color:#CFCBC0;color:var(--ink);background:#FCFBF9}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.btn.primary:hover{background:#000;border-color:#000;color:#fff}
+
+.filters{display:flex;flex-wrap:wrap;gap:14px 24px;padding-bottom:14px;font-size:12.5px;color:var(--ink-soft)}
+.grp{display:flex;align-items:center;gap:8px}
+.grp>span{color:var(--ink-faint)}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--card);
+     box-shadow:var(--shadow-sm)}
+.seg button{font-family:inherit;font-size:12.5px;padding:5px 12px;border:0;background:transparent;
+            color:var(--ink-soft);cursor:pointer;transition:background .15s ease,color .15s ease}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button:hover:not([aria-pressed="true"]){background:var(--rule-soft);color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+
+main{padding:22px 0 60px}
+.status{font-size:12.5px;color:var(--ink-faint);padding:0 0 14px}
+.empty{border:1px dashed var(--rule);border-radius:12px;padding:40px 26px;text-align:center;
+       color:var(--ink-soft);font-size:13.5px;background:rgba(255,255,255,.5)}
+.empty p{margin:0 0 6px}
+.empty p:last-child{margin-bottom:0;color:var(--ink-faint);font-size:12.5px}
+.empty code{font-family:var(--mono);font-size:12.5px;color:var(--ink);background:var(--rule-soft);
+            padding:1px 5px;border-radius:4px}
+
+.mod{background:var(--card);border:1px solid var(--rule);border-radius:12px;margin-bottom:16px;overflow:hidden;
+     box-shadow:var(--shadow-md)}
+.mod-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:13px 18px;
+          border-bottom:1px solid var(--rule-soft);background:linear-gradient(#FDFDFC,#FAF9F6);
+          position:sticky;top:0;z-index:1}
+.mod-name{font-family:var(--mono);font-size:14px;font-weight:650;letter-spacing:-.01em;word-break:break-all}
+.tag{font-size:11px;font-weight:600;letter-spacing:.03em;padding:2.5px 9px;border-radius:99px;
+     font-variant-numeric:tabular-nums}
+.tag.afle{background:var(--afle-bg);color:var(--afle);box-shadow:inset 0 0 0 1px var(--afle-soft)}
+.tag.dtyp{background:var(--dtyp-bg);color:var(--dtyp);box-shadow:inset 0 0 0 1px var(--dtyp-soft)}
+.tag.fmod{background:var(--fmod-bg);color:var(--fmod);box-shadow:inset 0 0 0 1px var(--fmod-soft)}
+.mod-head .btn{margin-left:auto;font-size:12px;padding:4px 11px}
+
+.note{padding:14px 18px}
+.note+.note{border-top:1px solid var(--rule-soft)}
+.note-head{display:flex;align-items:baseline;gap:9px;font-size:11.5px;margin-bottom:10px}
+.note-head .id{font-family:var(--mono);font-weight:650;letter-spacing:.01em}
+.note-head .lbl{color:var(--ink-soft)}
+.note-head .n{margin-left:auto;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.afle .note-head .id{color:var(--afle)}
+.dtyp .note-head .id{color:var(--dtyp)}
+.fmod .note-head .id{color:var(--fmod)}
+
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+td{font-family:var(--mono);font-size:12.5px;padding:4px 8px 4px 0;vertical-align:top;word-break:break-all}
+td.p{width:38%;color:var(--ink-soft)}
+td.v{color:var(--ink)}
+tr.rep td.p{color:transparent}
+tr:hover td.p,tr.rep:hover td.p{color:var(--ink-soft)}
+tbody tr{transition:background .12s ease}
+tbody tr:hover{background:rgba(23,23,27,.028)}
+mark{background:#FBEBA6;color:inherit;border-radius:3px;padding:0 2px}
+
+.more{width:100%;margin-top:6px;padding:9px 0}
+footer{border-top:1px solid var(--rule);padding:16px 0 28px;font-size:12px;color:var(--ink-faint)}
+.legal{margin-top:10px;padding-top:10px;border-top:1px solid var(--rule-soft);
+       font-size:11px;line-height:1.6;color:var(--ink-faint)}
+kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--rule);border-bottom-width:2px;
+    border-radius:5px;padding:1px 5px;background:var(--card);color:var(--ink-soft)}
+
+.noteBar{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding-bottom:14px;font-size:12.5px;
+         position:relative}
+/* Barre de chargement des donnees, visible seulement quand elles manquent. */
+.dataBar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;
+         padding:9px 13px;border:1px solid var(--warn);border-radius:8px;
+         background:var(--warn-bg);font-size:12.5px}
+.dataBar .mot{color:var(--ink);font-weight:600}
+.dataBar .aide{color:var(--ink-soft);font-size:11.5px}
+.dataBar .btn.petit{padding:4px 11px;font-size:12px;cursor:pointer}
+/* Infobulle des notes. Placee hors du groupe de boutons, qui masque ce qui
+   deborde pour garder ses coins arrondis. */
+.noteTip{position:absolute;top:100%;left:0;z-index:20;max-width:460px;
+         margin-top:-4px;padding:10px 13px;border:1px solid var(--rule);border-radius:8px;
+         background:var(--card);box-shadow:var(--shadow-md);
+         font-size:12px;line-height:1.55;color:var(--ink-soft)}
+.noteTip .titre{display:block;font-weight:650;color:var(--ink);margin-bottom:3px}
+.noteTip .ou{display:block;margin-top:5px;color:var(--ink-faint);font-size:11.5px}
+.noteTip .fait,.noteTip .reste{display:block;margin-top:6px;padding-left:9px;
+                               border-left:2px solid var(--rule);font-size:11.5px}
+.noteTip .fait{border-left-color:var(--afle);color:var(--ink-soft)}
+.noteTip .reste{border-left-color:var(--warn);color:var(--ink-soft)}
+.noteBar .lead{color:var(--ink-faint)}
+/* Une note qui ne pese pas sur l'onglet ouvert : toujours cochable, mais
+   annoncee comme telle plutot que de laisser croire a un clic sans effet. */
+.noteBar .seg button[data-idle]{opacity:.45}
+.noteBar .seg button[data-idle]:hover{opacity:1}
+.noteBar .tail{color:var(--ink-faint);margin-left:2px}
+.tabs{display:flex;gap:6px;padding-bottom:14px}
+.tabs button{font-family:var(--sans);font-size:13px;font-weight:500;padding:6px 15px;border:1px solid var(--rule);
+             background:var(--card);color:var(--ink-soft);border-radius:99px;cursor:pointer;
+             box-shadow:var(--shadow-sm);transition:background .15s ease,color .15s ease,border-color .15s ease}
+.tabs button:hover:not([aria-pressed="true"]){border-color:#CFCBC0;color:var(--ink)}
+.tabs button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+.analyzerow{display:flex;gap:10px;padding-bottom:10px}
+#modInput{flex:1;min-width:0;font-family:var(--mono);font-size:13.5px;padding:9px 12px;border:1px solid var(--rule);
+          border-radius:8px;background:var(--card);color:var(--ink);outline:none;box-shadow:var(--shadow-sm);
+          transition:border-color .15s ease,box-shadow .15s ease}
+#modInput:focus{border-color:var(--afle);box-shadow:0 0 0 3px var(--afle-bg)}
+.analyzeActions{display:flex;align-items:center;gap:12px;padding:10px 0 4px}
+.analyzeActions .btn{padding:6px 14px}
+.hint{font-size:12px;color:var(--ink-faint)}
+
+.analyzeGrid{display:flex;gap:20px;align-items:flex-start}
+.analyzeLeft{flex:0 0 40%;min-width:0;position:sticky;top:calc(var(--header-h, 140px) + 16px)}
+.analyzeRight{flex:1;min-width:0}
+@media (max-width:860px){
+  .analyzeGrid{flex-direction:column}
+  .analyzeLeft{position:static;flex:none;width:100%}
+}
+
+.editor{position:relative;display:flex;height:calc(100vh - var(--header-h, 160px) - 90px);
+        min-height:260px;max-height:85vh;
+        border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:var(--card);
+        box-shadow:var(--shadow-md);transition:border-color .15s ease,box-shadow .15s ease}
+.editor:focus-within{border-color:var(--afle);box-shadow:0 0 0 3px var(--afle-bg)}
+.gutter{flex:none;width:46px;padding:11px 10px 11px 0;text-align:right;font-family:var(--edmono);font-size:13px;
+        line-height:20px;color:#B0ACA2;background:#F7F5F0;border-right:1px solid var(--rule-soft);
+        white-space:pre;overflow:hidden;
+        user-select:none;font-kerning:none;font-variant-ligatures:none;font-feature-settings:"kern" 0,"liga" 0,"calt" 0}
+.editor-body{position:relative;flex:1;min-width:0}
+.editor-body pre, .editor-body textarea{
+  margin:0;padding:11px 13px;font-family:var(--edmono);font-size:13px;line-height:20px;
+  letter-spacing:normal;word-spacing:0;tab-size:4;
+  font-kerning:none;font-variant-ligatures:none;font-feature-settings:"kern" 0,"liga" 0,"calt" 0;
+  text-rendering:optimizeSpeed;
+  white-space:pre;box-sizing:border-box;width:100%;height:100%;
+  overflow-y:auto;overflow-x:auto;border:0;position:absolute;inset:0;
+  scrollbar-width:none
+}
+.editor-body pre::-webkit-scrollbar, .editor-body textarea::-webkit-scrollbar{display:none}
+.resizer{position:absolute;left:0;right:0;bottom:0;height:9px;cursor:ns-resize;z-index:3}
+.resizer::after{content:'';position:absolute;right:10px;bottom:3px;width:16px;height:0;
+                 border-bottom:2px dotted var(--ink-faint)}
+
+/* Editeur "simple" (sans calque de surbrillance superpose) : la textarea est
+   directement visible, donc aucun risque de decalage entre deux calques. */
+.editor.plain textarea{
+  flex:1;min-width:0;margin:0;padding:11px 13px;font-family:var(--edmono);font-size:13px;line-height:20px;
+  letter-spacing:normal;word-spacing:0;tab-size:4;color:var(--ink);background:var(--card);
+  white-space:pre;box-sizing:border-box;height:100%;
+  overflow-y:auto;overflow-x:auto;border:0;outline:none;resize:none;scrollbar-width:none
+}
+.editor.plain textarea::-webkit-scrollbar{display:none}
+.editor.plain textarea::placeholder{color:var(--ink-faint)}
+
+#codeHighlight{color:var(--ink);pointer-events:none;background:transparent}
+.kw{color:var(--ink-soft)}
+.cm{color:var(--ink-faint);font-style:italic}
+#codeInput{background:transparent;color:transparent;caret-color:var(--ink);resize:none;outline:none}
+#codeInput::placeholder{color:var(--ink-faint)}
+
+mark.hit-2628704{background:var(--afle-bg);color:var(--afle);border-radius:2px}
+mark.hit-2438131{background:var(--dtyp-bg);color:var(--dtyp);border-radius:2px}
+mark.hit-2438006{background:var(--fmod-bg);color:var(--fmod);border-radius:2px}
+mark.partial-2628704{background:transparent;color:var(--afle);text-decoration:underline dotted;text-decoration-color:var(--afle)}
+mark.partial-2438131{background:transparent;color:var(--dtyp);text-decoration:underline dotted;text-decoration-color:var(--dtyp)}
+mark.partial-2438006{background:transparent;color:var(--fmod);text-decoration:underline dotted;text-decoration-color:var(--fmod)}
+
+.editor.flash{animation:editorFlash .9s ease-out}
+@keyframes editorFlash{
+  0%{box-shadow:0 0 0 3px rgba(27,27,31,.22)}
+  100%{box-shadow:0 0 0 3px rgba(27,27,31,0)}
+}
+
+#modHint, #acHint, #atcHint{font-size:12px;color:var(--ink-faint);padding:0 0 8px;min-height:1em}
+#modHint b, #acHint b, #atcHint b{color:var(--ink-soft);font-weight:600;font-family:var(--mono)}
+
+.filters input.mini, .filters input.wide{font-family:var(--mono);font-size:12.5px;padding:5px 9px;
+  border:1px solid var(--rule);border-radius:7px;background:var(--card);color:var(--ink);outline:none;
+  box-shadow:var(--shadow-sm)}
+.filters input.mini{width:112px}
+.filters input.wide{width:340px;max-width:46vw}
+.filters input:focus{border-color:var(--afle);box-shadow:0 0 0 3px var(--afle-bg)}
+
+.atcRule{display:inline-block;font-size:10.5px;font-weight:600;font-family:var(--sans);
+         background:var(--rule-soft);color:var(--ink-soft);border-radius:4px;padding:0 6px;white-space:nowrap}
+.atcNum{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+
+.atcPick{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.opt{display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;color:var(--ink-soft)}
+.opt input{margin:0}
+/* En-tete de groupe dans les resultats : meme grammaire que .note-head de
+   l'onglet Recherche, pour que la note se lise pareil d'un onglet a l'autre. */
+.atcNoteHead{display:flex;align-items:baseline;gap:9px;font-size:11.5px;margin:18px 0 9px;
+             padding-top:14px;border-top:1px solid var(--rule-soft)}
+.atcNoteHead.first{margin-top:0;padding-top:0;border-top:0}
+.atcNoteHead .id{font-family:var(--mono);font-weight:650;letter-spacing:.01em}
+.atcNoteHead .lbl{color:var(--ink-soft)}
+.atcNoteHead .n{margin-left:auto;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.atcNoteHead.afle .id{color:var(--afle)}
+.atcNoteHead.fmod .id{color:var(--fmod)}
+.atcPick input{width:15px;height:15px;margin:0;cursor:pointer;accent-color:var(--fix);flex:none}
+.atcItem{transition:opacity .15s ease}
+.atcItem.off{opacity:.42}
+.atcItem.off .add{background:transparent;color:var(--ink-faint);font-weight:400}
+.atcItem.off .del{background:transparent;color:var(--ink-faint);text-decoration:none}
+.atcList li:hover{background:rgba(107,63,160,.05);border-radius:6px}
+
+tr.hit td.p, tr.hit td.v, tr.partial td.p, tr.partial td.v{font-weight:600}
+.note.afle tr.hit{background:var(--afle-bg)}
+.note.afle td.hit-cell{color:var(--afle)}
+.note.dtyp tr.hit{background:var(--dtyp-bg)}
+.note.dtyp td.hit-cell{color:var(--dtyp)}
+.note.fmod tr.hit{background:var(--fmod-bg)}
+.note.fmod td.hit-cell{color:var(--fmod)}
+tr.hit td:first-child{border-left:2px solid currentColor;padding-left:8px}
+.note.afle tr.hit td:first-child{border-left-color:var(--afle)}
+.note.dtyp tr.hit td:first-child{border-left-color:var(--dtyp)}
+.note.fmod tr.hit td:first-child{border-left-color:var(--fmod)}
+tr.partial td.hit-cell{text-decoration:underline dotted;text-underline-offset:2px}
+.jump{cursor:pointer;border-radius:3px;transition:background .12s ease}
+.jump:hover{text-decoration:underline;background:rgba(23,23,27,.05)}
+.sub{font-weight:400;font-size:11px;color:var(--ink-faint)}
+td.flag{font-size:11px;color:var(--ink-faint);white-space:nowrap;width:auto;font-family:var(--sans)}
+p.none{font-size:12.5px;color:var(--ink-faint);margin:0 0 4px}
+p.scanNote{font-size:12.5px;color:var(--ink-soft);margin:0 0 14px}
+p.scanNote code{font-family:var(--mono);color:var(--ink)}
+details{margin-top:10px}
+details summary{font-size:12px;color:var(--ink-faint);cursor:pointer;user-select:none;
+                padding:3px 0;transition:color .15s ease}
+details summary:hover{color:var(--ink-soft)}
+details table{margin-top:6px}
+
+tr.structRow td{padding:9px 4px 11px 16px;border-top:1px dashed var(--rule-soft)}
+.structNote{font-size:11.5px;color:var(--ink-faint);margin-bottom:6px;font-family:var(--sans)}
+.structNote b{color:var(--ink-soft);font-family:var(--mono);font-weight:600}
+table.structTable{width:100%}
+table.structTable td{font-size:11.5px;padding:2px 8px 2px 0}
+table.structTable td.p{color:var(--afle)}
+
+.note.acd tr.hit{background:var(--afle-bg)}
+.note.acd td.hit-cell{color:var(--afle)}
+.note.acd tr.hit td:first-child{border-left-color:var(--afle)}
+.acResultHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;
+              font-size:12.5px;color:var(--ink-soft)}
+.acResultHead .btn{font-size:12px;padding:5px 11px;white-space:nowrap}
+
+.warnBox{background:var(--warn-bg);border:1px solid var(--warn-border);border-radius:10px;padding:13px 16px;
+         margin-bottom:16px;box-shadow:var(--shadow-sm)}
+.warnTitle{font-size:12.5px;font-weight:600;color:var(--warn);margin:0 0 9px;line-height:1.5}
+.warnList{margin:0;padding-left:18px;font-size:12.5px;color:var(--ink-soft)}
+.warnList li{margin-bottom:10px}
+.warnList li:last-child{margin-bottom:0}
+.warnList b{color:var(--ink)}
+.warnJump{font-family:var(--mono);cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px;color:var(--warn)}
+.warnJump:hover{text-decoration:underline}
+.warnFields{display:block;margin-top:3px;font-family:var(--mono);font-size:11.5px;color:var(--ink-faint)}
+
+/* ---- Propositions de correction ---- */
+.fixBox{background:var(--fix-bg);border:1px solid var(--fix-border);border-radius:10px;padding:13px 16px;
+        margin-bottom:16px;box-shadow:var(--shadow-sm)}
+.fixHead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.fixTitle{font-size:12.5px;font-weight:600;color:var(--fix);margin:0;flex:1;min-width:180px}
+.fixHead .btn{font-size:12px;padding:5px 11px}
+.fixList{list-style:none;margin:0;padding:0}
+.fixList li{padding:7px 0;border-top:1px solid rgba(107,63,160,.12);font-size:12.5px}
+.fixList li:first-child{border-top:0;padding-top:0}
+.fixLine{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-family:var(--mono);font-size:12px}
+.fixWhy{display:block;margin-top:3px;font-family:var(--sans);font-size:11.5px;color:var(--ink-faint)}
+/* Avertissement semantique : la correspondance des champs est juste, mais le
+   sens change. Traite a part des remplacements, qui eux sont surs. */
+.fixWarnTitle{display:flex;align-items:baseline;gap:8px;font-family:var(--sans);font-size:12.5px;
+              font-weight:600;color:var(--warn)}
+.fixWarnTitle::before{content:"!";font-family:var(--mono);background:var(--warn-bg);color:var(--warn);
+                      border-radius:4px;padding:0 6px;font-size:11px;font-weight:700}
+.fixWarnText{display:block;margin-top:4px;font-family:var(--sans);font-size:11.5px;
+             color:var(--ink-soft);line-height:1.5}
+.del{background:var(--del-bg);color:var(--del-ink);border-radius:4px;padding:1px 6px;text-decoration:line-through;
+     text-decoration-thickness:1px}
+.add{background:var(--add-bg);color:var(--add-ink);border-radius:4px;padding:1px 6px;font-weight:600}
+.arrow{color:var(--ink-faint)}
+.fixAmbig{background:var(--warn-bg);color:var(--warn);border-radius:4px;padding:1px 6px;font-size:11px;
+          font-family:var(--sans)}
+.matTag{background:var(--fmod-bg);color:var(--fmod);border-radius:4px;padding:0 5px;font-size:10.5px;
+        font-family:var(--sans);font-weight:600;white-space:nowrap}
+.okTag{background:var(--add-bg);color:var(--add-ink);border-radius:4px;padding:0 5px;font-size:10.5px;
+       font-family:var(--sans);font-weight:600;white-space:nowrap}
+.fixPre{margin:10px 0 0;padding:11px 13px;background:var(--card);border:1px solid var(--fix-border);
+        border-radius:8px;font-family:var(--edmono);font-size:12px;line-height:1.6;white-space:pre;
+        overflow-x:auto;color:var(--ink);max-height:320px;overflow-y:auto;
+        scrollbar-width:thin;scrollbar-color:var(--rule) transparent}
+.fixPre::-webkit-scrollbar{width:9px;height:9px}
+.fixPre::-webkit-scrollbar-thumb{background:var(--rule);border-radius:99px}
+.fixPre::-webkit-scrollbar-track{background:transparent}
+
+@media (max-width:620px){
+  td.p{width:46%}
+  .mod-head .btn{margin-left:0}
+  .analyzerow{flex-direction:column}
+  .wrap{padding:0 16px}
+  .filters input.wide{width:100%;max-width:none}
+  .h1sub{display:none}
+}
+
+/* Theme sombre. Le mode "auto" est resolu en JS vers light/dark, ce qui evite
+   de dupliquer ce bloc entre media query et choix explicite. */
+html[data-theme="dark"]{
+    --paper:#16161A; --card:#1D1D22; --ink:#ECEAE4; --ink-soft:#A8A49B;
+    --ink-faint:#7A776F; --rule:#33333A; --rule-soft:#292930;
+    --afle:#9CB6EC; --afle-bg:#1E2740; --afle-soft:#2C3A5C;
+    --dtyp:#7FD3B8; --dtyp-bg:#14302A; --dtyp-soft:#1E4238;
+    --fmod:#E0A987; --fmod-bg:#33231A; --fmod-soft:#46311F;
+    --warn:#E5B85C; --warn-bg:#2E2618; --warn-border:#4A3D21;
+    --fix:#C0A2E8; --fix-bg:#251E33; --fix-border:#3A2F4F;
+    --del-bg:#3A2020; --del-ink:#F0A6A0;
+    --add-bg:#17301F; --add-ink:#8FD9A6;
+}
+html[data-theme="dark"] .mod-head{background:linear-gradient(#212127,#1B1B20)}
+html[data-theme="dark"] .gutter{background:#1A1A1F;color:#5F5C55}
+html[data-theme="dark"] mark{background:#4A3F14;color:#F3E9BE}
+html[data-theme="dark"] tbody tr:hover{background:rgba(255,255,255,.035)}
+html[data-theme="dark"] .empty{background:rgba(255,255,255,.02)}
+html[data-theme="dark"] .btn:hover{background:#26262C;border-color:#45454E}
+html[data-theme="dark"] .fixPre{background:#191920}
+
+/* Selecteur de theme, aligne a droite de l'en-tete. */
+.themeSeg{margin-left:auto}
+.themeSeg button{font-size:12px;padding:4px 10px;line-height:1.4}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="masthead">
+      <h1>S/4&nbsp;Check <span class="h1sub">— analyse d'impact des notes SAP</span></h1>
+      <span class="sub"><b>0</b> modules fonction · <b>0</b> AFLE · <b>0</b> datatypes · <b>0</b> n° article · <b>0</b> champs ACDOCA · <b>748</b> structures</span>
+      <div class="seg themeSeg" id="themeSeg" role="group" aria-label="Thème">
+        <button data-t="auto" aria-pressed="true" title="Suivre le système">Auto</button>
+        <button data-t="light" aria-pressed="false" title="Thème clair">Clair</button>
+        <button data-t="dark" aria-pressed="false" title="Thème sombre">Sombre</button>
+      </div>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <button data-v="search" aria-pressed="true">Recherche</button>
+      <button data-v="analyze" aria-pressed="false">Analyse de code</button>
+      <button data-v="acdoca" aria-pressed="false">SELECT → ACDOCA</button>
+      <button data-v="atc" aria-pressed="false">Conversion ATC</button>
+    </div>
+
+    <div class="noteBar" id="noteBar"></div>
+
+    <div class="dataBar" id="dataBar" hidden>
+      <span class="mot" id="dataEtat"></span>
+      <label class="btn petit">Charger mes fichiers…<input type="file" id="dataFiles"
+             multiple accept=".json" hidden></label>
+      <span class="aide">index.json · acdoca_fields.json · struct_fields.json — lus dans
+        votre navigateur, rien n'est envoyé.</span>
+    </div>
+
+    <div id="searchControls">
+      <div class="searchrow">
+        <input id="q" type="search" autocomplete="off" spellcheck="false"
+               placeholder="BAPI_ACC_BILLING_POST" aria-label="Rechercher">
+        <button class="btn" id="csv">Exporter CSV</button>
+      </div>
+
+      <div class="filters">
+        <div class="grp">
+          <span>Chercher dans</span>
+          <div class="seg" id="scope">
+            <button data-v="module" aria-pressed="true">Module</button>
+            <button data-v="parameter" aria-pressed="false">Paramètre</button>
+            <button data-v="value" aria-pressed="false">Data element</button>
+            <button data-v="any" aria-pressed="false">Tout</button>
+          </div>
+        </div>
+        <div class="grp">
+          <span>Note</span>
+          <div class="seg" id="note">
+            <button data-v="all" aria-pressed="true">Toutes</button>
+            <button data-v="2628704" aria-pressed="false">2628704</button>
+            <button data-v="2438131" aria-pressed="false">2438131</button>
+            <button data-v="2438006" aria-pressed="false">2438006</button>
+            <button data-v="both" aria-pressed="false">Impactés 2×</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="analyzeControls" hidden>
+      <div class="analyzerow" style="padding-bottom:6px">
+        <input id="modInput" type="text" list="modList" autocomplete="off" spellcheck="false"
+               placeholder="Module fonction (optionnel — detecte automatiquement dans le code)" aria-label="Module fonction">
+        <datalist id="modList"></datalist>
+      </div>
+      <div class="filters" style="padding-bottom:10px">
+        <div class="grp">
+          <span>Pragma ATC</span>
+          <div class="seg" id="pragmaPos">
+            <button data-v="call" aria-pressed="true">Sur CALL FUNCTION</button>
+            <button data-v="end" aria-pressed="false">Fin d'instruction</button>
+            <button data-v="off" aria-pressed="false">Aucun</button>
+          </div>
+        </div>
+      </div>
+      <div id="modHint"></div>
+    </div>
+
+    <div id="acdocaControls" hidden>
+      <div class="filters">
+        <div class="grp">
+          <span>Table source</span>
+          <div class="seg" id="acTable">
+            <button data-v="auto" aria-pressed="true">Auto (FROM ...)</button>
+            <button data-v="bseg" aria-pressed="false">BSEG / BKPF</button>
+            <button data-v="coep" aria-pressed="false">COEP</button>
+            <button data-v="faglflexa" aria-pressed="false">FAGLFLEXA</button>
+          </div>
+        </div>
+      </div>
+      <div id="acHint"></div>
+    </div>
+
+    <div id="atcControls" hidden>
+      <div class="filters">
+        <div class="grp">
+          <span>Marqueur</span>
+          <input id="atcMarker" class="mini" type="text" value="COD001" spellcheck="false" aria-label="Marqueur">
+        </div>
+        <div class="grp">
+          <span>Initiales</span>
+          <input id="atcAuthor" class="mini" type="text" value="AEH" spellcheck="false" aria-label="Initiales">
+        </div>
+        <div class="grp">
+          <span>Date</span>
+          <input id="atcDate" class="mini" type="date" aria-label="Date">
+        </div>
+        <div class="grp">
+          <span>Cibler</span>
+          <input id="atcTarget" class="wide" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="ex. WRBTR, refe — vide = aucune affectation simple touchée"
+                 aria-label="Champs cibles">
+        </div>
+        <div class="grp">
+          <label class="opt"><input type="checkbox" id="atcAlpha" checked>
+            ALPHA = OUT sur les n° d'article</label>
+        </div>
+      </div>
+      <div id="atcHint"></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="panel-search">
+    <div class="status" id="status"></div>
+    <div id="results"></div>
+  </div>
+  <div id="panel-analyze" hidden>
+    <div class="analyzeGrid">
+      <div class="analyzeLeft">
+        <div class="editor" id="editor">
+          <div class="gutter" id="gutter">1</div>
+          <div class="editor-body">
+            <pre id="codeHighlight" aria-hidden="true"><code></code></pre>
+            <textarea id="codeInput" spellcheck="false"
+              placeholder="Collez ici les declarations ABAP du module fonction (IMPORTING / EXPORTING / TABLES / CHANGING, structures, TYPE ...). Laissez le module vide pour chercher dans tout l'index."></textarea>
+          </div>
+          <div class="resizer" id="resizer" title="Glisser pour agrandir"></div>
+        </div>
+        <div class="analyzeActions">
+          <button class="btn" id="analyzeBtn">Analyser</button>
+          <span class="hint" id="tokenCount"></span>
+        </div>
+      </div>
+      <div class="analyzeRight">
+        <div id="analyzeResults"></div>
+      </div>
+    </div>
+  </div>
+  <div id="panel-acdoca" hidden>
+    <div class="analyzeGrid">
+      <div class="analyzeLeft">
+        <div class="editor plain" id="acEditor">
+          <div class="gutter" id="acGutter">1</div>
+          <textarea id="acCode" spellcheck="false"
+            placeholder="Collez ici votre SELECT (ou tout code ABAP) sur BSEG / BKPF / COEP / FAGLFLEXA. La table source est detectee automatiquement via FROM ..., ou choisissez-la ci-dessus."></textarea>
+          <div class="resizer" id="acResizer" title="Glisser pour agrandir"></div>
+        </div>
+        <div class="analyzeActions">
+          <button class="btn" id="acAnalyzeBtn">Transformer</button>
+          <span class="hint" id="acTokenCount"></span>
+        </div>
+      </div>
+      <div class="analyzeRight">
+        <div id="acdocaResults"></div>
+      </div>
+    </div>
+  </div>
+  <div id="panel-atc" hidden>
+    <div class="analyzeGrid">
+      <div class="analyzeLeft">
+        <div class="editor plain" id="atcEditor">
+          <div class="gutter" id="atcGutter">1</div>
+          <textarea id="atcCode" spellcheck="false"
+            placeholder="Collez ici le code ABAP signale par l'ATC.&#10;&#10;Extension de champ : MOVE, ADD / SUBTRACT (y compris TO: et FROM: chaines),&#10;WRITE ... TO (avec ou sans CURRENCY), WRITE: chaine, MESSAGE ... WITH,&#10;affichage MATNR sur 18 caracteres, affectations / calculs cibles.&#10;&#10;Ordre des lignes : SELECT ... UP TO n ROWS sans ORDER BY, DELETE ADJACENT&#10;DUPLICATES sans tri, LOOP AT avec AT NEW / AT END OF, READ ... BINARY SEARCH.&#10;&#10;Les lignes remplacees sont commentees selon la convention COD001."></textarea>
+          <div class="resizer" id="atcResizer" title="Glisser pour agrandir"></div>
+        </div>
+        <div class="analyzeActions">
+          <button class="btn" id="atcBtn">Convertir</button>
+          <span class="hint" id="atcCount"></span>
+        </div>
+      </div>
+      <div class="analyzeRight">
+        <div id="atcResults"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="wrap">
+  <kbd>/</kbd> pour chercher · <kbd>Échap</kbd> pour effacer · recherche insensible à la casse, sous-chaîne.
+  Page autonome, aucune connexion réseau requise.
+  <div class="legal">
+    © 2026 AEH — build 2026-08-30.
+    Usage interne autorisé. Modification, redistribution et réutilisation
+    soumises à autorisation écrite de l'auteur.
+  </div>
+</footer>
+
+<script>
+/* ---- Donnees extraites des notes SAP -----------------------------------
+   Deux facons de les avoir. Le build complet les embarque ; le build public,
+   destine a une page en libre acces, ne les embarque pas — ce contenu vient
+   de notes accessibles derriere authentification, il n'a rien a faire sur
+   Internet ouvert. Dans ce cas l'utilisateur charge ses propres fichiers
+   depuis son poste : la lecture se fait dans le navigateur, rien n'est
+   envoye nulle part.
+
+   D'ou des variables reassignables et une initialisation rejouable. */
+let DATA = {};
+let ACDOCA_DATA = [];
+let STRUCT_TYPES = [];
+let STRUCT_FIELDS = {};
+
+/**
+ * Normalise les structures, quelle que soit leur provenance.
+ *
+ * Embarquees, elles arrivent compactees — "champ:idx|champ:idx", ou idx
+ * designe un type dans STRUCT_TYPES en base 36, sans quoi la page depasserait
+ * 1,4 Mo. Chargees depuis struct_fields.json, elles arrivent en clair.
+ */
+function normaliserStructs(raw){
+  const out = {};
+  for (const name in raw){
+    const valeur = raw[name];
+    if (!valeur){ out[name] = []; continue; }
+    const champs = typeof valeur === 'string'
+      ? valeur.split('|').map(pair => {
+          const i = pair.indexOf(':');
+          return {field: pair.slice(0, i),
+                  type: STRUCT_TYPES[parseInt(pair.slice(i + 1), 36)] || ''};
+        })
+      : valeur;
+    // FU / TU : versions majuscules calculees une fois. Le croisement avec
+    // le code parcourt des dizaines de milliers de champs a chaque analyse,
+    // les recalculer a la volee coutait l'essentiel du temps de rendu.
+    out[name] = champs.map(c => ({field: c.field, type: c.type || '',
+                                  FU: (c.field || '').toUpperCase(),
+                                  TU: (c.type || '').toUpperCase()}));
+  }
+  return out;
+}
+STRUCT_FIELDS = normaliserStructs({});
+/* ---- Catalogue des notes couvertes par la page -------------------------
+   Source unique. Chaque onglet y puise les notes dont il releve, et la barre
+   « Notes actives » sous les onglets les presente toutes : le numero de note
+   se lit pareil d'un bout a l'autre de la page, et se coche au meme endroit.
+   Meme decoupage que le catalogue SapNote de l'add-on Eclipse, pour que les
+   deux outils nomment les memes choses.
+
+   domaine : 'index'  -> Recherche et Analyse de code (donnees de index.json)
+             'acdoca' -> SELECT vers ACDOCA
+             'atc'    -> Conversion ATC (regles de reecriture)
+
+   L'unite d'activation est le CONTROLE, pas la note : « note » n'en est
+   qu'un attribut, et il est vide pour toute une famille de constats. Les
+   points de simplification S/4 portent un numero (liste de simplification,
+   Simplification Item Catalog) ; les controles de programmation robuste
+   livres par la variante FUNCTIONAL_DB — SELECT sans ORDER BY, DELETE
+   ADJACENT DUPLICATES sans tri, SELECT SINGLE non unique — n'en portent
+   aucun et n'en porteront jamais : ce ne sont pas des simplifications. Les
+   indexer sur un numero de note les aurait rendus increprensentables.
+
+   Ajouter une note tient en une ligne ici, plus les donnees ou la regle qui
+   la mettent en oeuvre. */
+const NOTE_CATALOG = [
+  {id: "2628704", note: "2628704", domain: "index",  cls: "afle",
+   label: "AFLE — extension de longueur de champ",
+   aide: "Les champs montant des BAPI comptables ont été élargis. La note liste, "
+       + "module par module, les paramètres concernés : les appels doivent être repris.",
+   couvre: "détection des paramètres impactés, surlignage et pragma ATC"},
+  {id: "2438131", note: "2438131", domain: "index",  cls: "dtyp",
+   label: "Datatypes BAPI",
+   aide: "Le numéro d’article passe à 40 caractères dans les interfaces RFC publiées. "
+       + "La note donne le type attendu pour chaque paramètre de BAPI.",
+   couvre: "détection des paramètres impactés, surlignage et pragma ATC"},
+  {id: "2438006", note: "2438006", domain: "index",  cls: "fmod",
+   label: "N° article 18 → 40 — modules fonction locaux",
+   aide: "Même sujet, mais pour les modules fonction locaux : un champ long a été "
+       + "ajouté à côté de l’ancien, dont la longueur ne pouvait pas changer.",
+   couvre: "détection des paramètres impactés et du champ long correspondant"},
+  {id: "2156822", note: "2156822", domain: "acdoca", cls: "dtyp",
+   label: "Mapping ACDOCA → FI / CO",
+   aide: "Correspondance des champs de BSEG, BKPF, COEP et FAGLFLEXA vers ACDOCA. "
+       + "C’est elle qui permet de réécrire un SELECT vers le journal universel.",
+   couvre: "réécriture du SELECT, plus trois avertissements : ledger, signe des "
+         + "montants, périmètre des lignes",
+   manuel: "le filtre RLDNR et la reprise du traitement de signe restent à écrire"},
+  {id: "2610650", note: "2610650", domain: "atc",    cls: "afle",
+   label: "Extension des champs montant (AFLE)",
+   aide: "Les montants passent de 13 à 23 chiffres. Toutes les instructions qui les "
+       + "manipulaient sur l’ancienne longueur doivent être réécrites.",
+   couvre: "MOVE, ADD / SUBTRACT (formes chaînées comprises), WRITE ... TO avec ou "
+         + "sans CURRENCY, WRITE: chaîné, affectations et calculs vers les champs ciblés"},
+  {id: "2215424", note: "2215424", domain: "atc",    cls: "fmod",
+   label: "Extension du n° article à 40 caractères",
+   aide: "Le numéro d’article passe de 18 à 40 caractères. C’est tout le traitement "
+       + "de chaîne qui l’entoure qui est concerné : déclarations en CHAR 18, "
+       + "comparaisons avec un champ plus court, concaténations, accès par offset, "
+       + "variables de message, paramètres typés.",
+   couvre: "affichage sur 18 positions, ALPHA = OUT, MESSAGE ... WITH",
+   manuel: "comparaisons, concaténations, offsets figés à 18, MOVE-CORRESPONDING et "
+         + "paramètres de CALL FUNCTION — la conversion dépend du champ en cause"},
+  // Sans numero de note : ce sont des controles de programmation robuste, pas
+  // des points de simplification S/4. Ils partagent pourtant une seule cause
+  // — le code s'appuie sur un ordre de lignes que HANA ne garantit plus — et
+  // se traitent de la meme facon : trier explicitement.
+  {id: "ORDRE",   note: "",        domain: "atc",    cls: "dtyp",
+   short: "sans note",
+   label: "Sans note — dépendance à l'ordre des lignes",
+   aide: "Ces constats n’ont pas de note SAP : ce sont des contrôles de programmation, "
+       + "pas des points de simplification. Même cause pour tous — le code s’appuie sur "
+       + "un ordre de lignes que la base ne garantit plus depuis que les tables pool et "
+       + "cluster sont devenues transparentes.",
+   couvre: "SELECT ... UP TO n ROWS sans ORDER BY, DELETE ADJACENT DUPLICATES sans "
+         + "tri, LOOP AT avec AT NEW ou AT END OF, READ ... BINARY SEARCH hors boucle",
+   manuel: "SELECT SINGLE non unique — ORDER BY y est interdit, il faut compléter la "
+         + "clé ou réécrire en UP TO 1 ROWS ; et READ ... BINARY SEARCH dans une boucle"}
+];
+
+/* Onglets ou chaque domaine agit reellement. Sert a signaler, dans la barre,
+   les notes qui ne pesent pas sur l'onglet ouvert : elles restent cochables,
+   mais on ne laisse pas croire qu'elles y changent quelque chose. */
+const NOTE_TABS = {index: ["search", "analyze"], acdoca: ["acdoca"], atc: ["atc"]};
+
+/* Ou chaque domaine agit, dit en clair pour l'infobulle. */
+const NOTE_TABS_LABEL = {
+  index: "Recherche et Analyse de code",
+  acdoca: "SELECT → ACDOCA",
+  atc: "Conversion ATC"
+};
+
+const notesOfDomain = d => NOTE_CATALOG.filter(x => x.domain === d).map(x => x.id);
+
+/* Notes portees par index.json. Le reste du code s'en sert comme cle de
+   lecture des donnees : l'ordre et le contenu ne changent pas. */
+const NOTES = notesOfDomain('index');
+const ACDOCA_NOTE = "2156822";
+
+/* Notes prises en compte. Une note desactivee n'est ni detectee, ni
+   corrigee, ni pragmatisee — utile quand une note ne concerne pas le
+   perimetre en cours de reprise. L'ensemble est commun aux quatre onglets :
+   ecarter une note la retire partout. */
+const ACTIVE_NOTES = new Set(NOTE_CATALOG.map(x => x.id));
+
+/* Pragma ATC : pseudo-commentaire qui retire le constat une fois le code
+   verifie/adapte. Les notes couvertes ici portent toutes sur l'usage de
+   modules fonction, d'ou CI_USAGE_OK (cf. document ATC interne). */
+const PRAGMA_KIND = {"2628704": "CI_USAGE_OK", "2438131": "CI_USAGE_OK", "2438006": "CI_USAGE_OK"};
+let pragmaPos = 'call';   // 'call' | 'end' | 'off'
+const NOTE_LABEL = Object.fromEntries(NOTE_CATALOG.map(x => [x.id, x.label]));
+const NOTE_HINT = {
+  "2628704": "Recherche sur le nom de champ actuel, sans le suffixe _LONG (ex. AMOUNT, pas AMOUNT_LONG).",
+  "2438006": "Le n° article passe de 18 a 40 caracteres. La longueur des parametres RFC publies ne pouvant changer, un champ long supplementaire a ete ajoute a cote de l'ancien."
+};
+
+/* Marche a suivre prescrite par la note 2438006 elle-meme, selon sa colonne
+   "Note" : les modules ALE sortants relevent d'une autre note SAP. */
+const GUIDE_2438006 = {
+  "ALE Outbound Module": {note: "2381584", section: "Solution Step 5"},
+  "": {note: "2215852", section: "Calling Extended BAPIs and Released RFC Modules Locally in SAP S/4HANA"}
+};
+
+/* Types portant un numero d'article. Liste volontairement conservatrice :
+   tout type contenant "matnr", plus ceux constates dans les donnees. */
+const MATNR_TYPES = new Set(["ummat", "hkmat", "idnrk"]);
+function isMaterialType(type){
+  const t = (type || "").toLowerCase();
+  return t.includes("matnr") || MATNR_TYPES.has(t);
+}
+const NOTE_CLASS = Object.fromEntries(NOTE_CATALOG.map(x => [x.id, x.cls]));
+
+/* Numero de note d'une entree, vide pour les controles qui n'en ont pas. */
+const NOTE_NUM = Object.fromEntries(NOTE_CATALOG.map(x => [x.id, x.note]));
+
+/* Ce qu'on affiche a la place du numero quand il n'y en a pas. */
+const noteRef = id => NOTE_NUM[id] || 'sans note';
+const PAGE = 40;
+
+let MODULES = Object.keys(DATA);
+const $q = document.getElementById('q');
+const $results = document.getElementById('results');
+const $status = document.getElementById('status');
+
+let scope = 'module', noteFilter = 'all', shown = PAGE, matches = [];
+
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hl = (s, term) => {
+  const safe = esc(s);
+  if (!term) return safe;
+  const i = safe.toUpperCase().indexOf(term);
+  if (i < 0) return safe;
+  return safe.slice(0, i) + '<mark>' + safe.slice(i, i + term.length) + '</mark>' + safe.slice(i + term.length);
+};
+
+/* Les notes sans ligne pour un module ne sont pas embarquees : tout acces
+   passe par ici pour rester insensible aux cles absentes. */
+const NO_ROWS = [];
+function rowsOf(mod, note){
+  const d = DATA[mod];
+  return (d && d[note]) || NO_ROWS;
+}
+
+function notesOf(mod){
+  const present = NOTES.filter(n => ACTIVE_NOTES.has(n) && rowsOf(mod, n).length);
+  if (NOTES.includes(noteFilter)) return present.includes(noteFilter) ? [noteFilter] : [];
+  // "Impactes 2x" : modules cites par au moins deux notes.
+  if (noteFilter === 'both') return present.length >= 2 ? present : [];
+  return present;
+}
+
+function rowsFor(mod, note, term){
+  const rows = rowsOf(mod, note);
+  if (!term || scope === 'module') return rows;
+  if (scope === 'parameter') return rows.filter(r => r.parameter.toUpperCase().includes(term));
+  if (scope === 'value') return rows.filter(r => r.value.toUpperCase().includes(term));
+  return rows.filter(r => r.parameter.toUpperCase().includes(term) || r.value.toUpperCase().includes(term));
+}
+
+function compute(){
+  const term = $q.value.trim().toUpperCase();
+  matches = [];
+  for (const mod of MODULES){
+    const notes = notesOf(mod);
+    if (!notes.length) continue;
+
+    if (term && scope === 'module'){
+      if (!mod.toUpperCase().includes(term)) continue;
+    }
+    const kept = notes.map(n => [n, rowsFor(mod, n, term)]).filter(([, r]) => r.length);
+    if (term && scope !== 'module' && !kept.length) continue;
+    if (!kept.length) continue;
+
+    matches.push({mod, kept, term});
+  }
+  shown = PAGE;
+  render();
+}
+
+function render(){
+  const term = $q.value.trim().toUpperCase();
+  const nRows = matches.reduce((a, m) => a + m.kept.reduce((b, [, r]) => b + r.length, 0), 0);
+
+  if (!matches.length){
+    $status.textContent = '';
+    // Deux silences a ne pas confondre : rien ne correspond, ou toutes les
+    // notes de cet onglet ont ete ecartees.
+    const allOff = NOTES.every(x => !ACTIVE_NOTES.has(x));
+    $results.innerHTML = '<div class="empty"><p>'
+      + (allOff ? 'Les trois notes de cet onglet sont decochees.' : 'Aucun module ne correspond.') + '</p>'
+      + (allOff
+          ? '<p>Recochez-en une dans la barre « Notes actives ».</p>'
+          : '<p>Essayez une sous-chaîne plus courte, par exemple <code>ACC_DOCUMENT</code> ou <code>ALM_ORDER</code>.</p>')
+      + '</div>';
+    return;
+  }
+
+  $status.textContent = matches.length + (matches.length > 1 ? ' modules' : ' module')
+    + ' · ' + nRows + (nRows > 1 ? ' lignes' : ' ligne');
+
+  const slice = matches.slice(0, shown);
+  let html = '';
+  for (const {mod, kept} of slice){
+    html += '<section class="mod"><div class="mod-head">'
+      + '<span class="mod-name">' + (scope === 'module' ? hl(mod, term) : esc(mod)) + '</span>'
+      + NOTES.filter(n => ACTIVE_NOTES.has(n) && rowsOf(mod, n).length)
+             .map(n => '<span class="tag ' + NOTE_CLASS[n] + '">' + n + '</span>').join('')
+      + '<button class="btn copy" data-mod="' + esc(mod) + '">Copier</button></div>';
+
+    for (const [note, rows] of kept){
+      html += '<div class="note ' + NOTE_CLASS[note] + '">'
+        + '<div class="note-head"><span class="id">' + note + '</span>'
+        + '<span class="lbl">' + NOTE_LABEL[note] + '</span>'
+        + '<span class="n">' + rows.length + '</span></div><table><tbody>';
+      let prev = null;
+      for (const r of rows){
+        const rep = r.parameter === prev ? ' class="rep"' : '';
+        prev = r.parameter;
+        html += '<tr' + rep + '><td class="p">' + hl(r.parameter, scope === 'parameter' || scope === 'any' ? term : '')
+          + '</td><td class="v">' + hl(r.value, scope === 'value' || scope === 'any' ? term : '') + '</td></tr>';
+      }
+      html += '</tbody></table></div>';
+    }
+    html += '</section>';
+  }
+
+  if (matches.length > shown){
+    html += '<button class="btn more" id="more">Afficher ' + Math.min(PAGE, matches.length - shown)
+      + ' modules de plus (' + (matches.length - shown) + ' restants)</button>';
+  }
+  $results.innerHTML = html;
+}
+
+function flat(){
+  const out = [['module','note','parameter','data_element']];
+  for (const {mod, kept} of matches)
+    for (const [note, rows] of kept)
+      for (const r of rows) out.push([mod, note, r.parameter, r.value]);
+  return out;
+}
+
+$results.addEventListener('click', e => {
+  const more = e.target.closest('#more');
+  if (more){ shown += PAGE; render(); return; }
+
+  const copy = e.target.closest('.copy');
+  if (copy){
+    const mod = copy.dataset.mod;
+    const lines = [];
+    for (const note of notesOf(mod))
+      for (const r of rowsOf(mod, note)) lines.push([mod, note, r.parameter, r.value].join('\t'));
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      copy.textContent = 'Copié';
+      setTimeout(() => { copy.textContent = 'Copier'; }, 1400);
+    });
+  }
+});
+
+document.getElementById('csv').addEventListener('click', () => {
+  const csv = flat().map(r => r.map(c => '"' + c.replace(/"/g, '""') + '"').join(';')).join('\r\n');
+  const url = URL.createObjectURL(new Blob(['\ufeff' + csv], {type:'text/csv;charset=utf-8'}));
+  const a = document.createElement('a');
+  a.href = url; a.download = 'notes_sap_selection.csv'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('pragmaPos').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  for (const s of e.currentTarget.children) s.setAttribute('aria-pressed', String(s === b));
+  pragmaPos = b.dataset.v;
+  renderAnalysis();
+});
+
+for (const id of ['scope','note']){
+  document.getElementById(id).addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    for (const s of e.currentTarget.children) s.setAttribute('aria-pressed', String(s === b));
+    if (id === 'scope') scope = b.dataset.v; else noteFilter = b.dataset.v;
+    compute();
+  });
+}
+
+let t;
+$q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(compute, 90); });
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && document.activeElement !== $q){ e.preventDefault(); $q.focus(); $q.select(); }
+  if (e.key === 'Escape' && document.activeElement === $q){ $q.value = ''; compute(); }
+});
+
+compute();
+$q.focus();
+
+/* ---- Analyse de code ABAP ---- */
+
+const ABAP_STOP = new Set(['TYPE','TYPES','DATA','BEGIN','END','OF','STRUCTURE','TABLE','LIKE','VALUE',
+  'OPTIONAL','IMPORTING','EXPORTING','CHANGING','TABLES','EXCEPTIONS','RAISING','REF','TO','METHODS',
+  'METHOD','ENDMETHOD','CLASS','ENDCLASS','FUNCTION','ENDFUNCTION','FORM','ENDFORM','CONSTANTS','FIELD',
+  'SYMBOLS','READ','WRITE','IF','ENDIF','ELSE','ELSEIF','LOOP','ENDLOOP','CALL','MOVE','CLEAR','APPEND',
+  'WITH','DEFAULT','STANDARD','SORTED','HASHED','KEY','INITIAL','SIZE','LENGTH','DECIMALS','PACKED',
+  'STRING','FUNCTION-POOL','INTERFACE','ENDINTERFACE','PUBLIC','PRIVATE','PROTECTED','SECTION','RETURNING',
+  'NOT','AND','OR','IS','SUPPLIED','BOUND','THEN','CASE','ENDCASE','WHEN','OTHERS'].map(s => s.toUpperCase()));
+
+function tokenize(code){
+  const out = new Set();
+  const re = /[A-Za-z0-9_\/]{3,}/g;
+  let m;
+  while ((m = re.exec(code))){
+    const tok = m[0].toUpperCase();
+    if (/^[0-9\/]+$/.test(tok)) continue;
+    if (ABAP_STOP.has(tok)) continue;
+    out.add(tok);
+  }
+  return out;
+}
+
+/* Repere TOUS les modules fonction appeles/declares dans le code colle
+   (pas seulement le premier) : plusieurs CALL FUNCTION differents dans un
+   meme programme doivent tous etre detectes et analyses. */
+function detectModulesFromCode(code){
+  const found = [];
+  const seen = new Set();
+  const callRe = /CALL\s+FUNCTION\s+'([A-Za-z0-9_\/]+)'/gi;
+  let m;
+  while ((m = callRe.exec(code))){
+    const name = m[1].toUpperCase();
+    if (!seen.has(name)){ seen.add(name); found.push(name); }
+  }
+  const fnRe = /^\s*FUNCTION\s+([A-Za-z0-9_\/]+)\s*\.\s*$/gim;
+  while ((m = fnRe.exec(code))){
+    const name = m[1].toUpperCase();
+    if (!seen.has(name)){ seen.add(name); found.push(name); }
+  }
+  return found;
+}
+
+/* Un champ n'est "confirme" que si son parametre ET son data element apparaissent
+   tous les deux dans le code colle - la simple presence du parametre ou du champ
+   seul reste "partiel" (moins fiable). */
+/* Note 2628704 (AFLE) : la "valeur" indexee est le futur nom de champ etendu
+   (suffixe _LONG), qui n'existe pas encore dans le code actuel. Pour detecter
+   un impact reel, on cherche le nom de champ ACTUEL, donc sans ce suffixe
+   (ex. AMOUNT, pas AMOUNT_LONG). Sans objet pour 2438131 (datatypes BAPI). */
+function searchFieldName(note, value){
+  return note === '2628704' ? value.replace(/_LONG$/i, '') : value;
+}
+
+/* Certaines structures de la note 2438131 ont un releve complet de leurs
+   composants (importe depuis leur definition DDIC) : on croise ces champs
+   individuels avec le code colle, meme si le nom de la structure elle-meme
+   n'apparait pas litteralement (ex. usage via une work area). */
+function structFieldMatches(structName, tokens){
+  const fields = STRUCT_FIELDS[(structName || '').toUpperCase()];
+  if (!fields || !fields.length) return null;
+
+  // Les extensions de longueur ajoutent un champ <X>_LONG a cote du champ
+  // <X> d'origine, qui reste tronque. Si les deux figurent dans la meme
+  // structure, la conversion a proposer est certaine.
+  const names = new Set(fields.map(f => f.field.toLowerCase()));
+
+  const matched = [];
+  for (const f of fields){
+    const fHit = tokens.has(f.FU);
+    const tHit = tokens.has(f.TU);
+    if (!fHit && !tHit) continue;
+    const longName = f.field.toLowerCase() + '_long';
+    matched.push({
+      field: f.field, type: f.type, fHit, tHit,
+      longField: names.has(longName) ? longName : null
+    });
+  }
+  return {total: fields.length, matched};
+}
+
+function moduleAnalysis(mod, tokens){
+  if (!DATA[mod]) return null;
+  const out = {};
+  for (const note of NOTES){
+    // Note desactivee : on la neutralise ici, tout l'aval (affichage,
+    // corrections, pragmas) l'ignore alors naturellement.
+    const rows = ACTIVE_NOTES.has(note) ? rowsOf(mod, note) : NO_ROWS;
+    // Classement en une seule passe : sur un balayage croise cette fonction
+    // s'execute des milliers de fois, quatre filter() par note y pesaient.
+    const classified = [], full = [], field = [], param = [], none = [];
+    for (const r of rows){
+      const searchValue = searchFieldName(note, r.value);
+      const pHit = tokens.has(r.parameter.toUpperCase());
+      const vHit = tokens.has(searchValue.toUpperCase()) || tokens.has(r.value.toUpperCase());
+      const structDetail = structFieldMatches(r.value, tokens);
+      let state = pHit && vHit ? 'full' : vHit ? 'field' : pHit ? 'param' : 'none';
+      if (state === 'none' && structDetail && structDetail.matched.length) state = 'field';
+
+      const entry = {parameter: r.parameter, value: r.value, searchValue, state, pHit, vHit,
+                     structDetail, kind: r.note || '', note};
+      classified.push(entry);
+      (state === 'full' ? full : state === 'field' ? field : state === 'param' ? param : none).push(entry);
+    }
+    out[note] = {rows: classified, full, field, param, none, total: rows.length};
+  }
+  return out;
+}
+
+/* Index inverse token -> modules, construit une seule fois et seulement si
+   un balayage croise est demande. Sans lui, chercher sans module precise
+   imposait d'analyser en detail les 2000+ modules de l'index. */
+let TOKEN_INDEX = null;
+
+function buildTokenIndex(){
+  const idx = new Map();
+  const add = (tok, mod) => {
+    let set = idx.get(tok);
+    if (!set) idx.set(tok, set = new Set());
+    set.add(mod);
+  };
+  for (const mod of MODULES){
+    for (const note of NOTES){
+      for (const r of rowsOf(mod, note)){
+        add(r.parameter.toUpperCase(), mod);
+        add(r.value.toUpperCase(), mod);
+        const sv = searchFieldName(note, r.value).toUpperCase();
+        if (sv !== r.value.toUpperCase()) add(sv, mod);
+        const fields = STRUCT_FIELDS[r.value.toUpperCase()];
+        if (fields) for (const f of fields){ add(f.FU, mod); add(f.TU, mod); }
+      }
+    }
+  }
+  return idx;
+}
+
+function candidateModules(tokens){
+  if (!TOKEN_INDEX) TOKEN_INDEX = buildTokenIndex();
+  const out = new Set();
+  for (const tok of tokens){
+    const mods = TOKEN_INDEX.get(tok);
+    if (mods) for (const m of mods) out.add(m);
+  }
+  return out;
+}
+
+function hasAnyHit(a){
+  return NOTES.some(n => a[n].full.length || a[n].field.length || a[n].param.length);
+}
+
+function hitMapFromAnalysis(a, strong, soft){
+  for (const note of NOTES){
+    for (const r of a[note].full){ strong.set(r.parameter.toUpperCase(), note); strong.set(r.searchValue.toUpperCase(), note); }
+    for (const r of a[note].field) soft.set(r.searchValue.toUpperCase(), note);
+    for (const r of a[note].param) soft.set(r.parameter.toUpperCase(), note);
+    for (const r of a[note].rows){
+      if (!r.structDetail) continue;
+      for (const f of r.structDetail.matched){
+        if (f.fHit) soft.set(f.field.toUpperCase(), note);
+        if (f.tHit) soft.set(f.type.toUpperCase(), note);
+      }
+    }
+  }
+}
+
+/* ---- Editeur : numeros de ligne, surbrillance syntaxe, coloration des correspondances ---- */
+
+function highlightLine(line, strong, soft){
+  const starMatch = /^(\s*)\*(.*)$/.exec(line);
+  if (starMatch) return esc(starMatch[1]) + '<span class="cm">*' + esc(starMatch[2]) + '</span>';
+
+  const qIdx = line.indexOf('"');
+  const codePart = qIdx >= 0 ? line.slice(0, qIdx) : line;
+  const commentPart = qIdx >= 0 ? line.slice(qIdx) : '';
+
+  let html = '';
+  let last = 0;
+  const re = /[A-Za-z0-9_\/]{3,}/g;
+  let m;
+  while ((m = re.exec(codePart))){
+    html += esc(codePart.slice(last, m.index));
+    const tok = m[0];
+    const upper = tok.toUpperCase();
+    if (strong.has(upper)) html += '<mark class="hit-' + strong.get(upper) + '">' + esc(tok) + '</mark>';
+    else if (soft.has(upper)) html += '<mark class="partial-' + soft.get(upper) + '">' + esc(tok) + '</mark>';
+    else if (ABAP_STOP.has(upper)) html += '<span class="kw">' + esc(tok) + '</span>';
+    else html += esc(tok);
+    last = re.lastIndex;
+  }
+  html += esc(codePart.slice(last));
+  if (commentPart) html += '<span class="cm">' + esc(commentPart) + '</span>';
+  return html;
+}
+
+function updateEditor(strong, soft){
+  const code = $code.value;
+  $hlCode.innerHTML = code.split('\n').map(line => highlightLine(line, strong, soft)).join('\n') + '\n';
+
+  const nLines = code.split('\n').length;
+  let g = '';
+  for (let i = 1; i <= nLines; i++) g += i + '\n';
+  $gutter.textContent = g;
+
+  syncEditorScroll();
+}
+
+function syncEditorScroll(){
+  $hl.scrollTop = $code.scrollTop;
+  $hl.scrollLeft = $code.scrollLeft;
+  $gutter.scrollTop = $code.scrollTop;
+}
+
+/* ---- Navigation : cliquer une correspondance saute dessus dans le code ---- */
+
+function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+/* Renvoie TOUTES les occurrences du terme (pas seulement la premiere) afin
+   que la navigation puisse passer de l'une a l'autre au clic. */
+function findAllTokenOffsets(code, tok){
+  const offsets = [];
+  const re = new RegExp(escapeRegExp(tok), 'ig');
+  const isWord = c => c !== undefined && /[A-Za-z0-9_\/]/.test(c);
+  let m;
+  while ((m = re.exec(code))){
+    if (!isWord(code[m.index - 1]) && !isWord(code[m.index + tok.length])) offsets.push(m.index);
+    if (re.lastIndex === m.index) re.lastIndex++;
+  }
+  return offsets;
+}
+
+let charW;
+function charWidth(){
+  if (charW) return charW;
+  const span = document.createElement('span');
+  const cs = getComputedStyle($code);
+  span.style.font = cs.font;
+  span.style.position = 'absolute';
+  span.style.visibility = 'hidden';
+  span.style.whiteSpace = 'pre';
+  span.textContent = '0'.repeat(40);
+  document.body.appendChild(span);
+  charW = span.getBoundingClientRect().width / 40;
+  document.body.removeChild(span);
+  return charW;
+}
+
+function scrollCodeToOffset(offset){
+  const before = $code.value.slice(0, offset);
+  const beforeLines = before.split('\n');
+  const line = beforeLines.length - 1;
+  const col = beforeLines[beforeLines.length - 1].length;
+  const lh = parseFloat(getComputedStyle($code).lineHeight) || 20;
+  const cw = charWidth();
+  $code.scrollTop = Math.max(0, (line + 0.5) * lh - $code.clientHeight / 2);
+  $code.scrollLeft = Math.max(0, (col + 0.5) * cw - $code.clientWidth / 2);
+  syncEditorScroll();
+}
+
+let flashTimer;
+function flashEditor(){
+  $editor.classList.remove('flash');
+  void $editor.offsetWidth;
+  $editor.classList.add('flash');
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => $editor.classList.remove('flash'), 900);
+}
+
+function selectAndReveal(start, end){
+  $code.focus();
+  $code.setSelectionRange(start, end);
+  scrollCodeToOffset(start);
+  flashEditor();
+}
+
+let lastJump = {tok: null, idx: -1};
+let occTimer;
+let baseHint = '';
+
+function jumpToToken(tok){
+  const offsets = findAllTokenOffsets($code.value, tok);
+  if (!offsets.length) return;
+
+  let pos = 0;
+  if (lastJump.tok === tok){
+    const i = offsets.indexOf(lastJump.idx);
+    pos = i >= 0 ? (i + 1) % offsets.length : 0;
+  }
+  const idx = offsets[pos];
+  lastJump = {tok, idx};
+
+  selectAndReveal(idx, idx + tok.length);
+
+  clearTimeout(occTimer);
+  if (offsets.length > 1){
+    $tokenCount.textContent = 'Occurrence ' + (pos + 1) + ' / ' + offsets.length + ' de ' + tok + ' — recliquez pour la suivante';
+    occTimer = setTimeout(() => { $tokenCount.textContent = baseHint; }, 2500);
+  } else {
+    $tokenCount.textContent = baseHint;
+  }
+}
+
+/* ---- Detection des copies de structure (MOVE-CORRESPONDING, etc.) ----
+   La detection champ par champ ne peut pas "voir" a l'interieur d'une
+   structure copiee globalement : on repere ces operations pour signaler
+   qu'une verification manuelle est necessaire. */
+
+function findParamBindings(code, paramNames){
+  const bindings = new Map();
+  const re = /\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*\./g;
+  let m;
+  while ((m = re.exec(code))){
+    const param = m[1].toUpperCase();
+    if (paramNames.has(param)) bindings.set(m[2].toUpperCase(), param);
+  }
+  const loopRe = /LOOP\s+AT\s+([A-Za-z_][A-Za-z0-9_]*)\s+(?:INTO|ASSIGNING\s+FIELD-SYMBOL\()\s*([A-Za-z_<][A-Za-z0-9_>]*)/gi;
+  let lm;
+  while ((lm = loopRe.exec(code))){
+    const tableVar = lm[1].toUpperCase();
+    if (bindings.has(tableVar)) bindings.set(lm[2].toUpperCase().replace(/[<>]/g, ''), bindings.get(tableVar));
+  }
+  return bindings;
+}
+
+function findMoveCorresponding(code){
+  const out = [];
+  const re = /MOVE-CORRESPONDING\s+([A-Za-z_][\w<>]*)\s+TO\s+([A-Za-z_][\w<>]*)\s*\./gi;
+  let m;
+  while ((m = re.exec(code))){
+    out.push({
+      index: m.index,
+      text: m[0].trim(),
+      src: m[1].toUpperCase().replace(/[<>]/g, ''),
+      dst: m[2].toUpperCase().replace(/[<>]/g, '')
+    });
+  }
+  return out;
+}
+
+function fieldsForParam(a, param){
+  const out = [];
+  for (const note of NOTES){
+    for (const r of a[note].rows){
+      if (r.parameter.toUpperCase() === param) out.push(r.searchValue);
+    }
+  }
+  return out;
+}
+
+function buildStructureWarnings(code, a){
+  const paramNames = new Set();
+  for (const note of NOTES) for (const r of a[note].rows) paramNames.add(r.parameter.toUpperCase());
+
+  const moves = findMoveCorresponding(code);
+  if (!moves.length) return '';
+
+  const bindings = findParamBindings(code, paramNames);
+
+  /* On ne signale que les MOVE-CORRESPONDING qui touchent reellement un
+     parametre expose dans l'appel du module fonction analyse — pas les
+     copies de structures locales sans rapport, pour ne pas noyer l'info. */
+  const tied = [];
+  for (const mv of moves){
+    const param = bindings.get(mv.src) || bindings.get(mv.dst);
+    if (param) tied.push({...mv, param});
+  }
+  if (!tied.length) return '';
+
+  let html = '<div class="warnBox">'
+    + '<p class="warnTitle">⚠ MOVE-CORRESPONDING detecte sur un parametre expose par ce module fonction — la detection champ par champ peut etre incomplete ici, verifiez manuellement :</p>'
+    + '<ul class="warnList">';
+  for (const w of tied){
+    const fields = fieldsForParam(a, w.param);
+    const preview = fields.length
+      ? '<span class="warnFields">Champs a verifier (' + w.param + ') : ' + esc(fields.slice(0, 8).join(', ')) + (fields.length > 8 ? ', +' + (fields.length - 8) + ' autres' : '') + '</span>'
+      : '';
+    html += '<li><span class="warnJump" data-start="' + w.index + '" data-end="' + (w.index + w.text.length) + '">' + esc(w.text) + '</span>'
+      + ' — parametre <b>' + esc(w.param) + '</b>' + preview + '</li>';
+  }
+  html += '</ul></div>';
+  return html;
+}
+
+/* ---- Propositions de correction ----
+   On ne propose que des reecritures mecaniquement sures : renommage d'un
+   champ vers son equivalent etendu (note 2628704) et rappel de la
+   declaration DDIC attendue (note 2438131). Tout cas ambigu est signale
+   plutot que reecrit silencieusement. */
+
+const PENDING_FIX = new Map();
+let fixSeq = 0;
+
+/* ABAP s'ecrit indifferemment en majuscules ou en minuscules : on reproduit
+   la casse d'origine pour que le code corrige reste homogene. */
+function matchCase(sample, replacement){
+  if (sample === sample.toLowerCase()) return replacement.toLowerCase();
+  if (sample === sample.toUpperCase()) return replacement.toUpperCase();
+  return replacement;
+}
+
+function replaceWholeWord(code, from, to){
+  const re = new RegExp('(^|[^A-Za-z0-9_/])(' + escapeRegExp(from) + ')(?![A-Za-z0-9_/])', 'gi');
+  let count = 0;
+  const out = code.replace(re, (m, pre, hit) => { count++; return pre + matchCase(hit, to); });
+  return {code: out, count};
+}
+
+function buildAfleFixes(code, a){
+  const fixes = [];
+  const seen = new Set();
+  for (const r of a['2628704'].rows){
+    if (!r.vHit || r.searchValue === r.value) continue;
+    const key = r.searchValue.toUpperCase() + '>' + r.value.toUpperCase();
+    if (seen.has(key)) continue;
+    const {count} = replaceWholeWord(code, r.searchValue, r.value);
+    if (!count) continue;
+    seen.add(key);
+    fixes.push({from: r.searchValue, to: r.value, count, param: r.parameter});
+  }
+  return fixes;
+}
+
+/* On ne suggere une declaration que si le type DDIC n'apparait NULLE PART
+   dans le code colle : s'il y figure, le parametre est deja declare avec le
+   bon type et il n'y a rien a signaler. Meme dans ce cas, c'est formule
+   comme une verification (le code colle peut etre partiel) et non comme une
+   erreur avereee. */
+const TYPE_NOTES = ["2438131", "2438006"];   // notes portant sur les types de parametres
+
+/* Conversion vers les champs etendus : le code utilise un champ court alors
+   que la structure S/4 expose un champ <X>_LONG. Contrairement a l'AFLE, on
+   ne se fie pas a un suffixe devine : les deux champs doivent exister dans
+   la meme structure pour que la proposition soit emise. */
+function buildLongFieldFixes(code, a){
+  const fixes = [];
+  const seen = new Set();
+  for (const note of NOTES){
+    for (const r of a[note].rows){
+      if (!r.structDetail) continue;
+      for (const f of r.structDetail.matched){
+        if (!f.longField || !f.fHit) continue;
+        if (seen.has(f.field + '>' + f.longField)) continue;
+        const {count} = replaceWholeWord(code, f.field, f.longField);
+        if (!count) continue;
+        seen.add(f.field + '>' + f.longField);
+        fixes.push({
+          from: f.field, to: f.longField, count,
+          struct: r.value, param: r.parameter, note,
+          material: isMaterialType(f.type)
+        });
+      }
+    }
+  }
+  return fixes;
+}
+
+function buildTypeSuggestions(a){
+  const out = [];
+  const seen = new Set();
+  for (const note of TYPE_NOTES){
+    for (const r of a[note].rows){
+      if (r.state !== 'param') continue;   // parametre present, type DDIC absent
+      if (seen.has(r.parameter)) continue;
+      seen.add(r.parameter);
+      out.push({param: r.parameter, struct: r.value, note});
+    }
+  }
+  return out;
+}
+
+/* Marche a suivre de la note 2438006 : elle renvoie vers deux autres notes
+   SAP selon que le module est un module ALE sortant ou non. On ne l'affiche
+   que pour les parametres reellement utilises dans le code colle — c'est
+   precisement ce que les scans de code SAP ne savent pas faire. */
+function buildMatnrGuidance(a){
+  const out = [];
+  const seen = new Set();
+  for (const r of a['2438006'].rows){
+    if (r.state === 'none') continue;
+    if (seen.has(r.parameter)) continue;
+    seen.add(r.parameter);
+    const guide = GUIDE_2438006[r.kind] || GUIDE_2438006[''];
+    out.push({param: r.parameter, struct: r.value, kind: r.kind, guide});
+  }
+  return out;
+}
+
+/* Notes reellement constatees sur ce module : ce sont celles dont l'ATC
+   remontera un constat, donc celles a pragmatiser une fois le code adapte. */
+function notesHit(a){
+  return NOTES.filter(n => ACTIVE_NOTES.has(n) && a[n].rows.some(r => r.state !== 'none'));
+}
+
+/* Ajoute le pseudo-commentaire ATC sur l'appel du module fonction.
+   'call' : sur la ligne CALL FUNCTION.  'end' : en fin d'instruction.
+   Les deux placements sont pratiques ; le second est celui attendu par le
+   Code Inspector au sens strict (fin de l'instruction). */
+function addPragma(code, mod, notes){
+  if (pragmaPos === 'off' || !notes.length) return {code, applied: null};
+
+  const tag = notes.map(n => `"#EC ${PRAGMA_KIND[n] || 'CI_USAGE_OK'}[${n}]`).join(' ');
+  const lines = code.split('\n');
+  const callRe = new RegExp("CALL\\s+FUNCTION\\s+'" + escapeRegExp(mod) + "'", 'i');
+
+  let start = lines.findIndex(l => callRe.test(l));
+  if (start < 0) return {code, applied: null};
+
+  let target = start;
+  if (pragmaPos === 'end'){
+    // Fin de l'instruction : premiere ligne se terminant par un point.
+    for (let i = start; i < lines.length; i++){
+      if (/\.\s*(".*)?$/.test(atcStripComment(lines[i]).code.trimEnd())){ target = i; break; }
+      target = i;
+    }
+  }
+
+  if (lines[target].includes('#EC')) return {code, applied: null};   // deja pragmatise
+  lines[target] = lines[target].trimEnd() + '   ' + tag;
+  return {code: lines.join('\n'), applied: {line: target + 1, tag}};
+}
+
+function buildFixBox(code, a, mod){
+  const afle = buildAfleFixes(code, a);
+  const longs = buildLongFieldFixes(code, a);
+  const types = buildTypeSuggestions(a);
+  const matnr = buildMatnrGuidance(a);
+  const hitNotes = mod ? notesHit(a) : [];
+
+  let corrected = code;
+  const renames = afle.concat(longs);
+  for (const f of renames) corrected = replaceWholeWord(corrected, f.from, f.to).code;
+
+  const pragma = mod ? addPragma(corrected, mod, hitNotes) : {code: corrected, applied: null};
+  corrected = pragma.code;
+
+  if (!renames.length && !types.length && !matnr.length && !pragma.applied) return '';
+
+  const id = 'fix' + (++fixSeq);
+  PENDING_FIX.set(id, corrected);
+
+  let html = '<div class="fixBox"><div class="fixHead">'
+    + '<p class="fixTitle">Corrections proposees</p>';
+  if (renames.length || pragma.applied){
+    html += '<button class="btn" data-fixcopy="' + id + '">Copier le code corrige</button>'
+      + '<button class="btn primary" data-fixapply="' + id + '">Appliquer dans l\'editeur</button>';
+  }
+  html += '</div>';
+
+  if (renames.length){
+    html += '<ul class="fixList">';
+    for (const f of afle){
+      html += '<li><div class="fixLine"><span class="del">' + esc(f.from) + '</span>'
+        + '<span class="arrow">&rarr;</span><span class="add">' + esc(f.to) + '</span>'
+        + '<span class="sub">' + f.count + ' occurrence' + (f.count > 1 ? 's' : '') + '</span></div>'
+        + '<span class="fixWhy">Note 2628704 — champ etendu (AFLE) du parametre <b>' + esc(f.param) + '</b>.</span></li>';
+    }
+    for (const f of longs){
+      html += '<li><div class="fixLine"><span class="del">' + esc(f.from) + '</span>'
+        + '<span class="arrow">&rarr;</span><span class="add">' + esc(f.to) + '</span>'
+        + '<span class="sub">' + f.count + ' occurrence' + (f.count > 1 ? 's' : '') + '</span>'
+        + (f.material ? '<span class="matTag">n° article</span>' : '') + '</div>'
+        + '<span class="fixWhy">Note ' + f.note + ' — <b>' + esc(f.struct) + '</b> (parametre <b>'
+        + esc(f.param) + '</b>) expose les deux champs : <b>' + esc(f.from)
+        + '</b> reste tronque, <b>' + esc(f.to) + '</b> porte la valeur complete.'
+        + (f.note === '2438006'
+            ? ' Pour un module ALE, verifiez que les deux champs sont alimentes (note 2381584).'
+            : '')
+        + '</span></li>';
+    }
+    html += '</ul>';
+  }
+  if (renames.length || pragma.applied){
+    html += '<pre class="fixPre">' + esc(corrected) + '</pre>';
+  }
+
+  if (types.length){
+    html += '<ul class="fixList"' + (renames.length ? ' style="margin-top:12px"' : '') + '>';
+    for (const t of types){
+      html += '<li><div class="fixLine"><span class="add">DATA lt_' + esc(t.param.toLowerCase())
+        + ' TYPE STANDARD TABLE OF ' + esc(t.struct.toLowerCase()) + '.</span>'
+        + '<span class="fixAmbig">a verifier</span></div>'
+        + '<span class="fixWhy">Note ' + t.note + ' — le type <b>' + esc(t.struct) + '</b> n\'apparait pas dans le code colle. '
+        + 'Si <b>' + esc(t.param) + '</b> est declare ailleurs avec ce type DDIC, il n\'y a rien a corriger ; '
+        + 'sinon, evitez une structure locale figee.</span></li>';
+    }
+    html += '</ul>';
+  }
+
+  if (matnr.length){
+    html += '<ul class="fixList"' + (renames.length || types.length ? ' style="margin-top:12px"' : '') + '>';
+    for (const m of matnr){
+      html += '<li><div class="fixLine"><span class="add">' + esc(m.param) + '</span>'
+        + '<span class="arrow">&rarr;</span><span class="sub">' + esc(m.struct) + '</span>'
+        + (m.kind ? '<span class="fixAmbig">' + esc(m.kind) + '</span>' : '') + '</div>'
+        + '<span class="fixWhy">Note 2438006 — n° article etendu a 40 caracteres : un champ long a ete ajoute '
+        + 'a cote de l\'ancien (18 car.), qui reste tronque. Marche a suivre : <b>note SAP ' + m.guide.note
+        + '</b>, section « ' + esc(m.guide.section) + ' ».</span></li>';
+    }
+    html += '</ul>';
+  }
+
+  if (pragma.applied){
+    html += '<ul class="fixList" style="margin-top:12px"><li>'
+      + '<div class="fixLine"><span class="atcNum">l.' + pragma.applied.line + '</span>'
+      + '<span class="add">' + esc(pragma.applied.tag) + '</span>'
+      + '<span class="atcRule">pragma ATC</span></div>'
+      + '<span class="fixWhy">Ajoute sur l\'appel de <b>' + esc(mod) + '</b> pour retirer le constat ATC '
+      + 'une fois le mapping verifie. A ne conserver que si l\'adaptation est reellement faite : '
+      + 'le pragma masque le controle, il ne corrige rien.</span></li></ul>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+/* ---- Rendu des resultats ---- */
+
+function tdHtml(cls, text, hit, sub){
+  const subHtml = sub ? ' <span class="sub">→ ' + esc(sub) + '</span>' : '';
+  if (!hit) return '<td class="' + cls + '">' + esc(text) + subHtml + '</td>';
+  return '<td class="' + cls + ' hit-cell"><span class="jump" data-tok="' + esc(text) + '" tabindex="0" role="button">' + esc(text) + '</span>' + subHtml + '</td>';
+}
+
+function structDetailHtml(structDetail, structName){
+  const {total, matched} = structDetail;
+  if (!matched.length){
+    return '<tr class="structRow"><td colspan="3"><div class="structNote">Structure <b>' + esc(structName)
+      + '</b> (' + total + ' champs connus) — aucun detecte dans le code colle.</div></td></tr>';
+  }
+  let inner = '<div class="structNote">Structure <b>' + esc(structName) + '</b> — ' + matched.length + ' / ' + total
+    + ' champ' + (matched.length !== 1 ? 's' : '') + ' detecte' + (matched.length !== 1 ? 's' : '') + ' dans le code :</div>'
+    + '<table class="structTable"><tbody>';
+  let nbMat = 0, nbLong = 0;
+  for (const f of matched){
+    const tok = f.fHit ? f.field : f.type;
+    const isAlreadyLong = /_long$/i.test(f.field);
+    const mat = isMaterialType(f.type);
+    // Un champ deja etendu n'est pas a convertir : il ne compte pas comme
+    // "champ court sans equivalent long".
+    if (mat && !isAlreadyLong) nbMat++;
+    if (f.longField) nbLong++;
+    inner += '<tr><td class="p"><span class="jump" data-tok="' + esc(tok) + '" tabindex="0" role="button">' + esc(f.field) + '</span>'
+      + (f.longField ? ' <span class="sub">→ ' + esc(f.longField) + '</span>' : '')
+      + '</td>'
+      + '<td class="v">' + esc(f.type)
+      + (mat && !isAlreadyLong ? ' <span class="matTag" title="Type portant un numero d\'article : passe de 18 a 40 caracteres">n° article</span>' : '')
+      + (isAlreadyLong ? ' <span class="okTag" title="Champ deja etendu">etendu</span>' : '')
+      + '</td></tr>';
+  }
+  inner += '</tbody></table>';
+  if (nbLong){
+    inner += '<div class="structNote" style="margin:6px 0 0">' + nbLong + ' champ' + (nbLong > 1 ? 's' : '')
+      + ' dispose' + (nbLong > 1 ? 'nt' : '') + ' d\'un equivalent long dans cette structure — conversion proposee ci-dessus.</div>';
+  } else if (nbMat){
+    inner += '<div class="structNote" style="margin:6px 0 0">' + nbMat + ' champ' + (nbMat > 1 ? 's' : '')
+      + ' porte' + (nbMat > 1 ? 'nt' : '') + ' un n° article (18 car.), sans equivalent long connu dans cette version de la structure.</div>';
+  }
+  return '<tr class="structRow"><td colspan="3">' + inner + '</td></tr>';
+}
+
+function rowHtml(r){
+  const trClass = r.state === 'full' ? ' class="hit"' : r.state !== 'none' ? ' class="partial"' : '';
+  const flagShort = r.state === 'full' ? 'confirme' : r.state === 'field' ? 'champ' : r.state === 'param' ? 'parametre' : '';
+  const flagTitle = r.state === 'full' ? 'parametre + champ trouves'
+    : r.state === 'field' ? 'champ trouve (parametre non detecte)'
+    : r.state === 'param' ? 'parametre trouve (champ non detecte)'
+    : '';
+  const vSub = r.searchValue !== r.value ? r.value : null;
+  let html = '<tr' + trClass + '>' + tdHtml('p', r.parameter, r.pHit) + tdHtml('v', r.searchValue, r.vHit, vSub)
+    + '<td class="flag" title="' + esc(flagTitle) + '">' + flagShort + '</td></tr>';
+  if (r.structDetail) html += structDetailHtml(r.structDetail, r.value);
+  return html;
+}
+
+function restRows(rows){
+  let html = '<table><tbody>';
+  for (const r of rows){
+    const vSub = r.searchValue !== r.value ? ' <span class="sub">→ ' + esc(r.value) + '</span>' : '';
+    html += '<tr><td class="p">' + esc(r.parameter) + '</td><td class="v">' + esc(r.searchValue) + vSub + '</td></tr>';
+  }
+  return html + '</tbody></table>';
+}
+
+function noteBlock(note, data){
+  const {rows, full, field, param, none, total} = data;
+  const hintAttr = NOTE_HINT[note] ? ' title="' + esc(NOTE_HINT[note]) + '"' : '';
+
+  // Note sans aucune ligne pour ce module : on n'affiche rien du tout.
+  if (!total) return '';
+  const shown = rows.filter(r => r.state !== 'none');
+  const nConfirmed = full.length, nPartial = field.length + param.length;
+  const summary = nConfirmed + ' confirme' + (nConfirmed !== 1 ? 's' : '')
+    + (nPartial ? ' + ' + nPartial + ' partiel' + (nPartial !== 1 ? 's' : '') : '')
+    + ' / ' + total;
+
+  let html = '<div class="note ' + NOTE_CLASS[note] + '">'
+    + '<div class="note-head"><span class="id">' + note + '</span><span class="lbl"' + hintAttr + '>' + NOTE_LABEL[note] + '</span>'
+    + '<span class="n">' + summary + '</span></div>';
+
+  html += shown.length
+    ? '<table><tbody>' + shown.map(rowHtml).join('') + '</tbody></table>'
+    : '<p class="none">Aucun des ' + total + ' champs recenses n\'a ete detecte dans le code colle.</p>';
+
+  if (none.length){
+    html += '<details><summary>' + none.length + ' autre' + (none.length !== 1 ? 's' : '') + ' non detecte' + (none.length !== 1 ? 's' : '') + ' dans ce module</summary>' + restRows(none) + '</details>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderModuleSection(mod, a, extraHtml){
+  let html = '<section class="mod"><div class="mod-head"><span class="mod-name">' + esc(mod) + '</span>';
+  for (const note of NOTES) if (a[note].total) html += '<span class="tag ' + NOTE_CLASS[note] + '">' + note + '</span>';
+  html += '</div>';
+  if (extraHtml) html += extraHtml;
+  for (const note of NOTES) html += noteBlock(note, a[note]);
+  html += '</section>';
+  return html;
+}
+
+function renderAnalysis(){
+  const code = $code.value;
+  const tokens = tokenize(code);
+  lastJump = {tok: null, idx: -1};
+  clearTimeout(occTimer);
+  PENDING_FIX.clear();
+  baseHint = tokens.size
+    ? tokens.size + ' identifiant' + (tokens.size > 1 ? 's' : '') + ' reconnu' + (tokens.size > 1 ? 's' : '') + ' dans le code colle'
+    : '';
+  $tokenCount.textContent = baseHint;
+
+  if (!code.trim()){
+    updateEditor(new Map(), new Map());
+    $modHint.innerHTML = '';
+    updateHeaderOffset();
+    $analyzeResults.innerHTML = '<div class="empty"><p>Collez tout le code ABAP du module fonction : l\'appel <code>CALL FUNCTION \'...\'</code> ou sa declaration, les parametres, et l\'usage des champs.</p>'
+      + '<p>Le module fonction est detecte automatiquement dans le code. Renseignez le champ ci-dessus pour en forcer un autre.</p></div>';
+    return;
+  }
+
+  const manualMod = $mod.value.trim().toUpperCase();
+
+  if (manualMod){
+    updateHeaderOffset();
+    if (DATA[manualMod]){
+      const a = moduleAnalysis(manualMod, tokens);
+      const strong = new Map(), soft = new Map();
+      hitMapFromAnalysis(a, strong, soft);
+      updateEditor(strong, soft);
+      $modHint.innerHTML = '';
+      const extra = buildFixBox(code, a, manualMod) + buildStructureWarnings(code, a);
+      $analyzeResults.innerHTML = renderModuleSection(manualMod, a, extra);
+      return;
+    }
+    updateEditor(new Map(), new Map());
+    $modHint.innerHTML = '';
+    $analyzeResults.innerHTML = '<div class="empty"><p><b>' + esc(manualMod) + '</b> n\'apparait dans aucune des deux notes.</p>'
+      + '<p>Aucun champ ni parametre recense comme impacte pour ce module.</p></div>';
+    return;
+  }
+
+  const detectedList = detectModulesFromCode(code);
+  const knownMods = detectedList.filter(m => DATA[m]);
+
+  if (knownMods.length){
+    $modHint.innerHTML = knownMods.length === 1
+      ? 'Module detecte automatiquement : <b>' + esc(knownMods[0]) + '</b>'
+      : knownMods.length + ' modules detectes automatiquement : <b>' + knownMods.map(esc).join('</b>, <b>') + '</b>';
+    updateHeaderOffset();
+
+    const strong = new Map(), soft = new Map();
+    let sections = '';
+    for (const m of knownMods){
+      const a = moduleAnalysis(m, tokens);
+      hitMapFromAnalysis(a, strong, soft);
+      sections += renderModuleSection(m, a, buildFixBox(code, a, m) + buildStructureWarnings(code, a));
+    }
+    updateEditor(strong, soft);
+    $analyzeResults.innerHTML = sections;
+    return;
+  }
+
+  $modHint.innerHTML = '';
+  updateHeaderOffset();
+
+  if (!tokens.size){
+    updateEditor(new Map(), new Map());
+    $analyzeResults.innerHTML = '<div class="empty"><p>Aucun identifiant reconnu dans le texte colle.</p></div>';
+    return;
+  }
+
+  const hits = [];
+  for (const m of candidateModules(tokens)){
+    const a = moduleAnalysis(m, tokens);
+    if (hasAnyHit(a)) hits.push({mod: m, a});
+  }
+
+  const strong = new Map(), soft = new Map();
+  for (const {a} of hits) hitMapFromAnalysis(a, strong, soft);
+  updateEditor(strong, soft);
+
+  const detectedNote = detectedList.length
+    ? '<p class="scanNote">Module' + (detectedList.length > 1 ? 's' : '') + ' detecte' + (detectedList.length > 1 ? 's' : '') + ' dans le code : <b>'
+      + detectedList.map(esc).join('</b>, <b>') + '</b> (absent' + (detectedList.length > 1 ? 's' : '') + ' des deux notes) — recherche croisee sur tout l\'index.</p>'
+    : '';
+
+  if (!hits.length){
+    $analyzeResults.innerHTML = detectedNote
+      + '<div class="empty"><p>Aucune correspondance dans l\'index pour les identifiants colles.</p>'
+      + '<p>Precisez un module fonction ci-dessus pour cibler l\'analyse.</p></div>';
+    return;
+  }
+
+  // Le balayage croise peut ramener plus d'un millier de modules : les
+  // afficher d'un bloc fige la page pour un resultat illisible. On pagine,
+  // comme l'onglet Recherche.
+  crossHits = hits;
+  crossShown = CROSS_PAGE;
+  renderCrossHits(detectedList.length ? detectedNote
+    : '<p class="scanNote">Aucun module precise — recherche croisee sur tout l\'index ('
+      + hits.length + ' module' + (hits.length > 1 ? 's' : '') + ' avec correspondance).</p>');
+}
+
+const CROSS_PAGE = 25;
+let crossHits = [], crossShown = CROSS_PAGE, crossHeader = '';
+
+function renderCrossHits(header){
+  if (header !== undefined) crossHeader = header;
+  const slice = crossHits.slice(0, crossShown);
+  let html = crossHeader + slice.map(({mod, a}) => renderModuleSection(mod, a)).join('');
+  const rest = crossHits.length - crossShown;
+  if (rest > 0){
+    html += '<button class="btn more" id="crossMore">Afficher ' + Math.min(CROSS_PAGE, rest)
+      + ' modules de plus (' + rest + ' restants)</button>';
+  }
+  $analyzeResults.innerHTML = html;
+}
+
+const $mod = document.getElementById('modInput');
+const $code = document.getElementById('codeInput');
+const $editor = document.getElementById('editor');
+const $hl = document.getElementById('codeHighlight');
+const $hlCode = $hl.querySelector('code');
+const $gutter = document.getElementById('gutter');
+const $modHint = document.getElementById('modHint');
+const $analyzeResults = document.getElementById('analyzeResults');
+const $tokenCount = document.getElementById('tokenCount');
+const $modList = document.getElementById('modList');
+const $resizer = document.getElementById('resizer');
+$modList.innerHTML = MODULES.map(m => '<option value="' + esc(m) + '">').join('');
+
+let resizing = false, resizeStartY = 0, resizeStartH = 0;
+$resizer.addEventListener('mousedown', e => {
+  resizing = true;
+  resizeStartY = e.clientY;
+  resizeStartH = $editor.getBoundingClientRect().height;
+  document.body.style.userSelect = 'none';
+  e.preventDefault();
+});
+window.addEventListener('mousemove', e => {
+  if (!resizing) return;
+  const h = Math.min(window.innerHeight * 0.8, Math.max(140, resizeStartH + (e.clientY - resizeStartY)));
+  $editor.style.height = h + 'px';
+  syncEditorScroll();
+});
+window.addEventListener('mouseup', () => {
+  if (!resizing) return;
+  resizing = false;
+  document.body.style.userSelect = '';
+});
+
+let ta;
+$code.addEventListener('input', () => { clearTimeout(ta); ta = setTimeout(renderAnalysis, 150); });
+$mod.addEventListener('input', () => { clearTimeout(ta); ta = setTimeout(renderAnalysis, 150); });
+$code.addEventListener('scroll', syncEditorScroll);
+
+/* Pendant une selection a la souris (glisser-selectionner), le navigateur peut
+   faire defiler la textarea (auto-scroll) sans que l'evenement 'scroll' suffise
+   a garder la couche de surbrillance parfaitement synchronisee en temps reel —
+   d'ou un decalage visuel entre le texte selectionne et le texte affiche.
+   On force une resynchronisation a chaque frame tant que le bouton est enfonce. */
+let syncRAF = null;
+function syncLoop(){
+  syncEditorScroll();
+  syncRAF = requestAnimationFrame(syncLoop);
+}
+$code.addEventListener('mousedown', () => {
+  if (syncRAF === null) syncRAF = requestAnimationFrame(syncLoop);
+});
+window.addEventListener('mouseup', () => {
+  if (syncRAF !== null){ cancelAnimationFrame(syncRAF); syncRAF = null; }
+  syncEditorScroll();
+});
+$code.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  e.preventDefault();
+  const start = $code.selectionStart, end = $code.selectionEnd;
+  $code.value = $code.value.slice(0, start) + '  ' + $code.value.slice(end);
+  $code.selectionStart = $code.selectionEnd = start + 2;
+  clearTimeout(ta); ta = setTimeout(renderAnalysis, 0);
+});
+document.getElementById('analyzeBtn').addEventListener('click', renderAnalysis);
+
+$analyzeResults.addEventListener('click', e => {
+  if (e.target.closest('#crossMore')){ crossShown += CROSS_PAGE; renderCrossHits(); return; }
+
+  const apply = e.target.closest('[data-fixapply]');
+  if (apply){
+    const fixed = PENDING_FIX.get(apply.dataset.fixapply);
+    if (fixed === undefined) return;
+    $code.value = fixed;
+    renderAnalysis();
+    flashEditor();
+    return;
+  }
+
+  const copy = e.target.closest('[data-fixcopy]');
+  if (copy){
+    const fixed = PENDING_FIX.get(copy.dataset.fixcopy);
+    if (fixed === undefined) return;
+    navigator.clipboard.writeText(fixed).then(() => {
+      copy.textContent = 'Copié';
+      setTimeout(() => { copy.textContent = 'Copier le code corrige'; }, 1400);
+    });
+    return;
+  }
+
+  const w = e.target.closest('.warnJump');
+  if (w){ selectAndReveal(+w.dataset.start, +w.dataset.end); return; }
+  const j = e.target.closest('.jump');
+  if (j) jumpToToken(j.dataset.tok);
+});
+
+/* ---- Onglet SELECT -> ACDOCA (mapping SAP Note 2156822) ---- */
+
+function splitFieldCell(cell){
+  if (!cell) return [];
+  const out = [];
+  for (let part of cell.split(',')){
+    part = part.trim();
+    if (!part) continue;
+    const m = /^([A-Za-z_]+\d)\/(\d+)$/.exec(part);
+    if (m){
+      out.push(m[1]);
+      out.push(m[1].slice(0, -1) + m[2]);
+      continue;
+    }
+    if (part.includes('/') && !part.includes('(')){
+      for (const p of part.split('/')) if (p.trim()) out.push(p.trim());
+      continue;
+    }
+    out.push(part);
+  }
+  return out;
+}
+
+const ACDOCA_TABLES = ['faglflexa', 'coep', 'bseg'];
+const ACDOCA_TABLE_LABEL = {faglflexa: 'FAGLFLEXA', coep: 'COEP', bseg: 'BSEG / BKPF'};
+let ACDOCA_INDEX = {faglflexa: new Map(), coep: new Map(), bseg: new Map()};
+
+/* Index inverse champ ancien -> lignes de correspondance. Reconstruit a
+   chaque chargement de donnees. */
+function construireAcdocaIndex(){
+  ACDOCA_INDEX = {faglflexa: new Map(), coep: new Map(), bseg: new Map()};
+  for (const entry of ACDOCA_DATA){
+    for (const table of ACDOCA_TABLES){
+      for (const oldField of splitFieldCell(entry[table])){
+        const key = oldField.toUpperCase();
+        if (!ACDOCA_INDEX[table].has(key)) ACDOCA_INDEX[table].set(key, []);
+        ACDOCA_INDEX[table].get(key).push(entry);
+      }
+    }
+  }
+}
+construireAcdocaIndex();
+
+function detectAcdocaTable(code){
+  const m = /FROM\s+(BSEG|BKPF|COEP|FAGLFLEXA)\b/i.exec(code);
+  if (!m) return null;
+  const t = m[1].toUpperCase();
+  return t === 'BKPF' ? 'bseg' : t.toLowerCase();
+}
+
+const $acCode = document.getElementById('acCode');
+const $acEditor = document.getElementById('acEditor');
+const $acGutter = document.getElementById('acGutter');
+const $acHint = document.getElementById('acHint');
+const $acTokenCount = document.getElementById('acTokenCount');
+const $acdocaResults = document.getElementById('acdocaResults');
+const $acResizer = document.getElementById('acResizer');
+
+let acTableChoice = 'auto';
+let acLastJump = {tok: null, idx: -1};
+let acOccTimer;
+let acBaseHint = '';
+
+function updateAcGutter(){
+  const nLines = $acCode.value.split('\n').length;
+  let g = '';
+  for (let i = 1; i <= nLines; i++) g += i + '\n';
+  $acGutter.textContent = g;
+  $acGutter.scrollTop = $acCode.scrollTop;
+}
+
+function acScrollToOffset(offset){
+  const before = $acCode.value.slice(0, offset);
+  const line = before.split('\n').length - 1;
+  const lh = parseFloat(getComputedStyle($acCode).lineHeight) || 20;
+  $acCode.scrollTop = Math.max(0, (line + 0.5) * lh - $acCode.clientHeight / 2);
+  $acGutter.scrollTop = $acCode.scrollTop;
+}
+
+function acJumpToToken(tok){
+  const offsets = findAllTokenOffsets($acCode.value, tok);
+  if (!offsets.length) return;
+  let pos = 0;
+  if (acLastJump.tok === tok){
+    const i = offsets.indexOf(acLastJump.idx);
+    pos = i >= 0 ? (i + 1) % offsets.length : 0;
+  }
+  const idx = offsets[pos];
+  acLastJump = {tok, idx};
+  $acCode.focus();
+  $acCode.setSelectionRange(idx, idx + tok.length);
+  acScrollToOffset(idx);
+
+  clearTimeout(acOccTimer);
+  if (offsets.length > 1){
+    $acTokenCount.textContent = 'Occurrence ' + (pos + 1) + ' / ' + offsets.length + ' de ' + tok + ' — recliquez pour la suivante';
+    acOccTimer = setTimeout(() => { $acTokenCount.textContent = acBaseHint; }, 2500);
+  } else {
+    $acTokenCount.textContent = acBaseHint;
+  }
+}
+
+function acFieldRowHtml(oldField, entry){
+  const versionTag = entry.release ? esc((entry.other || 'New') + ' ' + entry.release) : '';
+  const flag = esc(entry.description) + (versionTag ? ' <span class="sub">' + versionTag + '</span>' : '');
+  return '<tr class="hit">'
+    + '<td class="p hit-cell"><span class="jump" data-tok="' + esc(oldField) + '" tabindex="0" role="button">' + esc(oldField) + '</span></td>'
+    + '<td class="v hit-cell">' + esc(entry.field) + '</td>'
+    + '<td class="flag">' + flag + '</td></tr>';
+}
+
+function renderAcdoca(){
+  const code = $acCode.value;
+  const tokens = tokenize(code);
+  acLastJump = {tok: null, idx: -1};
+  clearTimeout(acOccTimer);
+  PENDING_FIX.clear();
+  acBaseHint = tokens.size
+    ? tokens.size + ' identifiant' + (tokens.size > 1 ? 's' : '') + ' reconnu' + (tokens.size > 1 ? 's' : '') + ' dans le code colle'
+    : '';
+  $acTokenCount.textContent = acBaseHint;
+  updateAcGutter();
+
+  if (!code.trim()){
+    $acHint.innerHTML = '';
+    $acdocaResults.innerHTML = '<div class="empty"><p>Collez un <code>SELECT</code> (ou tout code ABAP) portant sur BSEG, BKPF, COEP ou FAGLFLEXA.</p>'
+      + '<p>La table source est detectee depuis <code>FROM ...</code>, ou choisissez-la ci-dessus.</p></div>';
+    return;
+  }
+
+  if (!ACTIVE_NOTES.has(ACDOCA_NOTE)){
+    $acHint.innerHTML = '';
+    $acdocaResults.innerHTML = '<div class="empty"><p>Note ' + ACDOCA_NOTE
+      + ' decochee — le mapping vers ACDOCA n\'est pas propose.</p>'
+      + '<p>Recochez-la dans la barre « Notes actives ».</p></div>';
+    return;
+  }
+
+  const table = acTableChoice !== 'auto' ? acTableChoice : detectAcdocaTable(code);
+
+  if (!table){
+    $acHint.innerHTML = '';
+    $acdocaResults.innerHTML = '<div class="empty"><p>Table source introuvable dans le code (pas de <code>FROM BSEG</code> / <code>BKPF</code> / <code>COEP</code> / <code>FAGLFLEXA</code>).</p>'
+      + '<p>Precisez-la manuellement ci-dessus.</p></div>';
+    return;
+  }
+
+  $acHint.innerHTML = acTableChoice === 'auto'
+    ? 'Table detectee automatiquement : <b>' + esc(ACDOCA_TABLE_LABEL[table]) + '</b>'
+    : '';
+
+  const index = ACDOCA_INDEX[table];
+  const seen = new Set();
+  const rows = [];
+  for (const tok of tokens){
+    if (!index.has(tok)) continue;
+    for (const entry of index.get(tok)){
+      const key = tok + '|' + entry.field;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({oldField: tok, entry});
+    }
+  }
+  rows.sort((a, b) => a.oldField.localeCompare(b.oldField) || a.entry.field.localeCompare(b.entry.field));
+
+  if (!rows.length){
+    $acdocaResults.innerHTML = '<div class="empty"><p>Aucun champ de <b>' + esc(ACDOCA_TABLE_LABEL[table]) + '</b> reconnu dans le code colle.</p></div>';
+    return;
+  }
+
+  const acdocaFields = [...new Set(rows.map(r => r.entry.field.toLowerCase()))];
+
+  let html = '<div class="acResultHead"><span>' + rows.length + ' correspondance' + (rows.length > 1 ? 's' : '')
+    + ' — ' + esc(ACDOCA_TABLE_LABEL[table]) + ' → ACDOCA</span>'
+    + '<button class="btn" id="acCopyBtn">Copier les champs ACDOCA</button></div>';
+  html += buildAcdocaRewrite(code, table, rows);
+  html += '<div class="note acd"><table><tbody>';
+  for (const {oldField, entry} of rows) html += acFieldRowHtml(oldField, entry);
+  html += '</tbody></table></div>';
+  $acdocaResults.innerHTML = html;
+
+  document.getElementById('acCopyBtn').addEventListener('click', () => {
+    navigator.clipboard.writeText(acdocaFields.join(' ')).then(() => {
+      const btn = document.getElementById('acCopyBtn');
+      btn.textContent = 'Copié';
+      setTimeout(() => { btn.textContent = 'Copier les champs ACDOCA'; }, 1400);
+    });
+  });
+}
+
+/* Reecriture du SELECT vers ACDOCA : seuls les champs ayant UNE seule
+   correspondance sont remplaces automatiquement. Les champs ambigus (par ex.
+   MEINH -> CO_MEINH ou RVUNIT) sont signales et laisses tels quels, le choix
+   dependant du contexte fonctionnel. */
+function buildAcdocaRewrite(code, table, rows){
+  const byOld = new Map();
+  for (const {oldField, entry} of rows){
+    if (!byOld.has(oldField)) byOld.set(oldField, []);
+    byOld.get(oldField).push(entry.field);
+  }
+
+  const applied = [], ambiguous = [];
+  let rewritten = code.replace(/\b(FROM|JOIN)(\s+)(BSEG|BKPF|COEP|FAGLFLEXA)\b/gi,
+    (m, kw, sp, tbl) => kw + sp + matchCase(tbl, 'acdoca'));
+
+  let identical = 0;
+  for (const [oldField, targets] of byOld){
+    const uniq = [...new Set(targets)];
+    if (uniq.length > 1){ ambiguous.push({oldField, targets: uniq}); continue; }
+    // Meme nom des deux cotes (BELNR, GJAHR...) : rien a reecrire, on se
+    // contente de les compter pour ne pas polluer la liste des changements.
+    if (uniq[0].toUpperCase() === oldField.toUpperCase()){ identical++; continue; }
+    const res = replaceWholeWord(rewritten, oldField, uniq[0]);
+    if (!res.count) continue;
+    rewritten = res.code;
+    applied.push({oldField, to: uniq[0], count: res.count});
+  }
+
+  if (!applied.length && !ambiguous.length) return '';
+
+  /* Avertissements semantiques.
+
+     Le tableau de la note 2156822 donne la correspondance des champs, pas
+     leur sens. Deux differences ne se lisent dans aucun nom de champ et
+     faussent silencieusement un resultat : le ledger et le signe des
+     montants. On les signale, on ne les corrige pas — la bonne reponse
+     depend du calcul que fait le programme. */
+  const warnings = [];
+
+  if (!/\bRLDNR\b/i.test(rewritten)){
+    warnings.push({
+      titre: 'Aucune restriction sur le ledger (RLDNR)',
+      texte: "ACDOCA porte une ligne par ledger, RLDNR faisant partie de la cle. "
+           + "Sans restriction, la selection ramene chaque ecriture autant de fois "
+           + "qu'il y a de ledgers, et les montants sont multiplies d'autant. "
+           + "Ajouter une condition du type RLDNR = '0L' ; le ledger directeur se "
+           + "lit dans FINSC_LEDGER, XLEADING = 'X'."
+    });
+  }
+
+  const versMontant = applied.some(f => ['HSL', 'WSL', 'TSL', 'KSL'].includes(f.to.toUpperCase()));
+  const versSigne = applied.some(f => f.to.toUpperCase() === 'DRCRK');
+  if (table === 'bseg' && (versMontant || versSigne)){
+    warnings.push({
+      titre: 'Convention de signe differente sur les montants',
+      texte: "Dans BSEG, DMBTR et WRBTR sont toujours positifs : le sens est porte "
+           + "par SHKZG (S debit, H credit). Dans ACDOCA, HSL et WSL sont deja signes. "
+           + "Le remplacement des champs est juste, mais tout traitement qui inversait "
+           + "le signe d'apres SHKZG doit etre retire — sinon les credits sont comptes "
+           + "a l'envers."
+    });
+  }
+
+  if (table === 'bseg'){
+    warnings.push({
+      titre: 'Le perimetre des lignes n\'est pas le meme',
+      texte: "En S/4, BSEG ne porte plus toutes les ecritures du grand livre : ACDOCA "
+           + "contient en plus les reports a nouveau, les lignes issues de la migration "
+           + "et les ledgers d'extension. A requete egale, le resultat peut etre plus "
+           + "large qu'avant."
+    });
+  }
+
+  const id = 'acfix' + (++fixSeq);
+  PENDING_FIX.set(id, rewritten);
+
+  let html = '<div class="fixBox"><div class="fixHead">'
+    + '<p class="fixTitle">SELECT reecrit vers ACDOCA</p>'
+    + '<button class="btn" data-fixcopy="' + id + '">Copier le code corrige</button>'
+    + '<button class="btn primary" data-acfixapply="' + id + '">Appliquer dans l\'editeur</button></div>';
+
+  html += '<ul class="fixList">';
+  html += '<li><div class="fixLine"><span class="del">' + esc(ACDOCA_TABLE_LABEL[table])
+    + '</span><span class="arrow">&rarr;</span><span class="add">ACDOCA</span></div>'
+    + '<span class="fixWhy">Table remplacee dans les clauses FROM / JOIN.</span></li>';
+  for (const f of applied){
+    html += '<li><div class="fixLine"><span class="del">' + esc(f.oldField) + '</span>'
+      + '<span class="arrow">&rarr;</span><span class="add">' + esc(f.to) + '</span>'
+      + '<span class="sub">' + f.count + ' occurrence' + (f.count > 1 ? 's' : '') + '</span></div></li>';
+  }
+  for (const f of ambiguous){
+    html += '<li><div class="fixLine"><span class="del">' + esc(f.oldField) + '</span>'
+      + '<span class="arrow">&rarr;</span><span class="add">' + esc(f.targets.join(' | ')) + '</span>'
+      + '<span class="fixAmbig">ambigu — non remplace</span></div>'
+      + '<span class="fixWhy">Plusieurs champs ACDOCA possibles : choisissez selon le contexte fonctionnel.</span></li>';
+  }
+  for (const w of warnings){
+    html += '<li><div class="fixWarnTitle">' + esc(w.titre) + '</div>'
+      + '<span class="fixWarnText">' + esc(w.texte) + '</span></li>';
+  }
+  if (identical){
+    html += '<li><span class="fixWhy" style="margin-top:0">' + identical + ' champ' + (identical > 1 ? 's' : '')
+      + ' porte' + (identical > 1 ? 'nt' : '') + ' le meme nom dans ACDOCA — aucune reecriture necessaire.</span></li>';
+  }
+  html += '</ul>';
+  html += '<pre class="fixPre">' + esc(rewritten) + '</pre></div>';
+  return html;
+}
+
+$acdocaResults.addEventListener('click', e => {
+  const apply = e.target.closest('[data-acfixapply]');
+  if (apply){
+    const fixed = PENDING_FIX.get(apply.dataset.acfixapply);
+    if (fixed === undefined) return;
+    $acCode.value = fixed;
+    renderAcdoca();
+    return;
+  }
+
+  const copy = e.target.closest('[data-fixcopy]');
+  if (copy){
+    const fixed = PENDING_FIX.get(copy.dataset.fixcopy);
+    if (fixed === undefined) return;
+    navigator.clipboard.writeText(fixed).then(() => {
+      copy.textContent = 'Copié';
+      setTimeout(() => { copy.textContent = 'Copier le code corrige'; }, 1400);
+    });
+    return;
+  }
+
+  const j = e.target.closest('.jump');
+  if (j) acJumpToToken(j.dataset.tok);
+});
+
+document.getElementById('acTable').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  for (const s of e.currentTarget.children) s.setAttribute('aria-pressed', String(s === b));
+  acTableChoice = b.dataset.v;
+  renderAcdoca();
+});
+
+let acTa;
+$acCode.addEventListener('input', () => { clearTimeout(acTa); acTa = setTimeout(renderAcdoca, 150); });
+$acCode.addEventListener('scroll', () => { $acGutter.scrollTop = $acCode.scrollTop; });
+$acCode.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  e.preventDefault();
+  const start = $acCode.selectionStart, end = $acCode.selectionEnd;
+  $acCode.value = $acCode.value.slice(0, start) + '  ' + $acCode.value.slice(end);
+  $acCode.selectionStart = $acCode.selectionEnd = start + 2;
+  clearTimeout(acTa); acTa = setTimeout(renderAcdoca, 0);
+});
+document.getElementById('acAnalyzeBtn').addEventListener('click', renderAcdoca);
+
+let acSyncRAF = null;
+$acCode.addEventListener('mousedown', () => {
+  if (acSyncRAF === null) acSyncRAF = requestAnimationFrame(function loop(){
+    $acGutter.scrollTop = $acCode.scrollTop;
+    acSyncRAF = requestAnimationFrame(loop);
+  });
+});
+window.addEventListener('mouseup', () => {
+  if (acSyncRAF !== null){ cancelAnimationFrame(acSyncRAF); acSyncRAF = null; }
+  $acGutter.scrollTop = $acCode.scrollTop;
+});
+
+let acResizing = false, acResizeStartY = 0, acResizeStartH = 0;
+$acResizer.addEventListener('mousedown', e => {
+  acResizing = true;
+  acResizeStartY = e.clientY;
+  acResizeStartH = $acEditor.getBoundingClientRect().height;
+  document.body.style.userSelect = 'none';
+  e.preventDefault();
+});
+window.addEventListener('mousemove', e => {
+  if (!acResizing) return;
+  const h = Math.min(window.innerHeight * 0.8, Math.max(140, acResizeStartH + (e.clientY - acResizeStartY)));
+  $acEditor.style.height = h + 'px';
+});
+window.addEventListener('mouseup', () => {
+  if (!acResizing) return;
+  acResizing = false;
+  document.body.style.userSelect = '';
+});
+
+/* ============================================================
+   Conversion ATC — moteur de reecriture purement deterministe.
+   Chaque regle correspond a une regle de codage validee ; aucune
+   heuristique, aucune invention de type ou de logique metier.
+   ============================================================ */
+
+/* Retire le commentaire de fin de ligne en respectant les litteraux
+   ('...' et |...|), pour ne jamais couper au milieu d'une chaine. */
+function atcStripComment(line){
+  let inStr = false, quote = '';
+  for (let i = 0; i < line.length; i++){
+    const c = line[i];
+    if (inStr){
+      if (c === quote){
+        if (quote === "'" && line[i + 1] === "'"){ i++; continue; }  // '' echappe
+        inStr = false;
+      }
+      continue;
+    }
+    if (c === "'" || c === '|'){ inStr = true; quote = c; continue; }
+    if (c === '"') return {code: line.slice(0, i), comment: line.slice(i)};
+  }
+  return {code: line, comment: ''};
+}
+
+/* Regroupe les lignes en instructions ABAP (une instruction se termine par
+   un point, hors chaine et hors commentaire, et peut tenir sur n lignes). */
+function atcStatements(lines){
+  const out = [];
+  let buf = null;
+  for (let i = 0; i < lines.length; i++){
+    const raw = lines[i];
+    const isComment = /^\*/.test(raw);
+
+    if (!buf){
+      if (isComment || !atcStripComment(raw).code.trim()){
+        out.push({kind: 'raw', start: i, end: i, lines: [raw]});
+        continue;
+      }
+      buf = {kind: 'stmt', start: i, end: i, lines: [raw]};
+    } else {
+      buf.lines.push(raw);
+      buf.end = i;
+    }
+    if (isComment) continue;
+    if (/\.\s*$/.test(atcStripComment(raw).code.trimEnd())){
+      out.push(buf);
+      buf = null;
+    }
+  }
+  if (buf) out.push(buf);
+  return out;
+}
+
+/* Code de l'instruction, commentaires retires et lignes recollees. */
+function atcStmtCode(stmt){
+  return stmt.lines
+    .filter(l => !/^\*/.test(l))
+    .map(l => atcStripComment(l).code.trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/* Decoupe au niveau superieur : ignore les separateurs a l'interieur des
+   parentheses et des litteraux. */
+function atcSplitTop(text, sep){
+  const parts = [];
+  let depth = 0, cur = '', inStr = false, quote = '';
+  for (const c of text){
+    if (inStr){ cur += c; if (c === quote) inStr = false; continue; }
+    if (c === "'" || c === '|'){ inStr = true; quote = c; cur += c; continue; }
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if (c === sep && depth === 0){ parts.push(cur); cur = ''; continue; }
+    cur += c;
+  }
+  parts.push(cur);
+  return parts.map(p => p.trim()).filter(Boolean);
+}
+
+const ATC_IS_MATNR = expr => /matnr/i.test(expr);
+
+/* ADD / SUBTRACT, y compris leur forme chainee :
+     SUBTRACT reguh-rspe1 FROM: regud-swnet, sum_abschluss.
+   Les cibles sont alignees en colonnes, comme le fait la main pour garder
+   les affectations lisibles. */
+function atcAccumulate(verb, src, targets){
+  if (!targets.length) return null;
+  const op = verb.toUpperCase() === 'ADD' ? '+' : '-';
+  const width = Math.max(...targets.map(t => t.length));
+  const lines = targets.map(t => {
+    const pad = t.padEnd(width);
+    return `${pad} = CONV #( ${pad} ${op} ${src} ).`;
+  });
+  return {rule: verb.toUpperCase() + (targets.length > 1 ? ' chaine' : ''), lines};
+}
+
+/* --- Contexte necessaire aux regles de tri ------------------------------
+   Ces regles-la ne se decident pas sur la seule instruction : il faut savoir
+   ce qui la precede (un tri est-il deja pose ?) et ce qui l'entoure (est-on
+   dans une boucle ?). Le moteur leur passe donc la liste des instructions et
+   la position courante. */
+
+/* Un tri sur cette table est-il deja pose juste avant ? Sans ce garde-fou,
+   relancer la conversion empilerait les SORT. */
+function atcDejaTriee(ctx, table) {
+  if (!ctx || !ctx.stmts) return false;
+  const cible = table.toUpperCase();
+  for (let i = ctx.index - 1; i >= 0; i--) {
+    const prec = ctx.stmts[i];
+    if (prec.kind === 'raw') continue;                 // commentaire, ligne vide
+    const m = /^SORT\s+([\w<>\-]+)\b/i.exec(atcStmtCode(prec));
+    return !!m && m[1].toUpperCase() === cible;        // seule la precedente compte
+  }
+  return false;
+}
+
+/* Champs de rupture d'une boucle : ceux que AT NEW / AT END OF utilisent.
+   Le tri doit les reprendre dans l'ordre ou ils apparaissent, la rupture
+   etant hierarchique de la gauche vers la droite. */
+function atcChampsRupture(ctx) {
+  if (!ctx || !ctx.stmts) return [];
+  const champs = [];
+  let profondeur = 0;
+  for (let i = ctx.index + 1; i < ctx.stmts.length; i++) {
+    const st = ctx.stmts[i];
+    if (st.kind === 'raw') continue;
+    const c = atcStmtCode(st);
+    if (/^LOOP\b/i.test(c)) { profondeur++; continue; }
+    if (/^ENDLOOP\b/i.test(c)) {
+      if (profondeur === 0) break;                     // fin de notre boucle
+      profondeur--;
+      continue;
+    }
+    if (profondeur > 0) continue;                      // boucle imbriquee
+    const m = /^AT\s+(?:NEW|END\s+OF)\s+([\w\-]+)\s*\.$/i.exec(c);
+    if (m && !champs.includes(m[1])) champs.push(m[1]);
+  }
+  return champs;
+}
+
+/* Mots-cles ne pouvant pas introduire une affectation simple. */
+const ATC_KEYWORDS = new Set(['IF','ELSEIF','WHILE','CHECK','WHEN','CASE','AND','OR','NOT',
+  'LOOP','READ','SELECT','MODIFY','DELETE','INSERT','APPEND','CALL','FORM','PERFORM','DATA',
+  'TYPES','CONSTANTS','FIELD-SYMBOLS','ASSIGN','CLEAR','REFRESH','FREE','SORT','COLLECT',
+  'CONCATENATE','SPLIT','CONDENSE','REPLACE','TRANSLATE','SET','GET','EXPORT','IMPORT',
+  'SUBMIT','LEAVE','EXIT','RETURN','RAISE','MESSAGE','AUTHORITY-CHECK','AT','ENDIF','ENDLOOP',
+  'ENDFORM','ENDWHILE','ENDCASE','ENDSELECT','ELSE','TRY','CATCH','ENDTRY','METHOD','ENDMETHOD']);
+
+/* --- Notes SAP dont les regles decoulent ---------------------------------
+   Meme rattachement que l'add-on Eclipse : la note est l'unite de decision,
+   la regle n'en est que la mise en oeuvre. On traite une note, on en ajourne
+   une autre — et une note decochee n'est ni detectee, ni convertie.
+
+   Ce ne sont pas les notes de l'onglet Recherche : celles-ci portent sur
+   l'usage d'interfaces publiees (BAPI, modules fonction), celles-la sur
+   l'adaptation du code lui-meme. Les libelles et les couleurs viennent du
+   catalogue commun, en haut de ce script. */
+const ATC_NOTES = notesOfDomain('atc');
+
+/* Regle -> note. Les libelles sont ceux que le moteur produit, formes
+   chainees comprises (« ADD chaine »), d'ou le rabattement par prefixe. */
+const ATC_RULE_NOTE = {
+  "MOVE": "2610650",
+  "ADD": "2610650", "ADD chaine": "2610650",
+  "SUBTRACT": "2610650", "SUBTRACT chaine": "2610650",
+  "WRITE ... TO": "2610650",
+  "WRITE ... CURRENCY": "2610650",
+  "WRITE: chaine": "2610650",
+  "Affectation": "2610650",
+  "Calcul": "2610650",
+  "MATNR (18)": "2215424",
+  "MESSAGE ... WITH": "2215424",
+  "SELECT sans ORDER BY": "ORDRE",
+  "DELETE ADJACENT DUPLICATES sans tri": "ORDRE",
+  "LOOP AT ... AT sans tri": "ORDRE",
+  "READ ... BINARY SEARCH sans tri": "ORDRE"
+};
+
+/* ALPHA = OUT s'ajoute aux WRITE portant un numero d'article. C'est une
+   option distincte, rattachee a 2215424 : jamais appliquee aux montants. */
+let atcAlphaOut = true;
+
+function atcNoteOf(rule){
+  return ATC_RULE_NOTE[rule] || "2610650";
+}
+
+/* Note d'une conversion. La regle donne la note par defaut, mais certaines
+   formes en disent plus : un MESSAGE ... WITH conflit de longueur releve de
+   l'article ou du montant selon le champ passe, pas selon l'instruction. */
+function atcNoteOfChange(res){
+  return res.note || atcNoteOf(res.rule);
+}
+
+/* Numerotation des variables intermediaires, continue sur tout le source :
+   deux MESSAGE dans le meme programme ne doivent pas declarer deux fois le
+   meme nom. Remise a zero au debut de chaque conversion. */
+let atcVarSeq = 0;
+
+/* Suffixe ALPHA, si l'option est active et la source est un article. */
+function atcAlphaOf(src){
+  return atcAlphaOut && ATC_IS_MATNR(src) ? ' ALPHA = OUT' : '';
+}
+
+/* --- Les regles, dans l'ordre de priorite --- */
+function atcApplyRules(code, targets, ctx){
+  // 1. WRITE: chaine (plusieurs "src TO dst" separes par des virgules)
+  let m = /^WRITE\s*:\s*(.+)\.$/i.exec(code);
+  if (m && /\sTO\s/i.test(m[1])){
+    const parts = atcSplitTop(m[1], ',');
+    if (parts.length && parts.every(p => /\sTO\s/i.test(p))){
+      const outLines = [];
+      for (const part of parts){
+        const c = /^(.+?)\s+TO\s+(.+?)\s+CURRENCY\s+(.+)$/i.exec(part);
+        if (c){
+          outLines.push(`${c[2].trim()} = |{ ${c[1].trim()} CURRENCY = ${c[3].trim()} }|.`);
+          continue;
+        }
+        const s = /^(.+?)\s+TO\s+(.+)$/i.exec(part);
+        if (!s) return null;
+        const src = s[1].trim();
+        outLines.push(`${s[2].trim()} = |{ ${src}${atcAlphaOf(src)} }|.`);
+      }
+      return {rule: 'WRITE: chaine', lines: outLines};
+    }
+  }
+
+  // 2. WRITE <src> TO <dst> CURRENCY <devise>
+  m = /^WRITE\s*:?\s*(.+?)\s+TO\s+(.+?)\s+CURRENCY\s+(.+?)\.$/i.exec(code);
+  if (m){
+    return {rule: 'WRITE ... CURRENCY',
+            lines: [`${m[2].trim()} = |{ ${m[1].trim()} CURRENCY = ${m[3].trim()} }|.`]};
+  }
+
+  // 3. WRITE <src> TO <dst>
+  m = /^WRITE\s*:?\s*(.+?)\s+TO\s+(.+?)\.$/i.exec(code);
+  if (m){
+    const src = m[1].trim();
+    return {rule: 'WRITE ... TO',
+            lines: [`${m[2].trim()} = |{ ${src}${atcAlphaOf(src)} }|.`]};
+  }
+
+  // 4. MOVE <src> TO <dst>   (MOVE-CORRESPONDING exclu)
+  m = /^MOVE\s+(?!.*\bCORRESPONDING\b)(.+?)\s+TO\s+(.+?)\.$/i.exec(code);
+  if (m && !/^MOVE-/i.test(code)){
+    return {rule: 'MOVE', lines: [`${m[2].trim()} = CONV #( ${m[1].trim()} ).`]};
+  }
+
+  // 5. ADD <src> TO <dst>  /  SUBTRACT <src> FROM <dst>
+  //    Les deux acceptent la forme chainee (TO: / FROM: suivis d'une liste
+  //    de cibles separees par des virgules).
+  m = /^(ADD|SUBTRACT)\s+(.+?)\s+(TO|FROM)\s*:\s*(.+?)\.$/i.exec(code);
+  if (m) return atcAccumulate(m[1], m[2].trim(), atcSplitTop(m[4], ','));
+
+  m = /^(ADD|SUBTRACT)\s+(.+?)\s+(TO|FROM)\s+(.+?)\.$/i.exec(code);
+  if (m) return atcAccumulate(m[1], m[2].trim(), [m[4].trim()]);
+
+  // 6. WRITE d'affichage contenant un MATNR -> largeur figee a 18
+  if (/^WRITE\b/i.test(code) && !/\sTO\s/i.test(code) && ATC_IS_MATNR(code) && !/\(18\)/.test(code)){
+    const fixed = code.replace(
+      /(^|[\s:,\/])((?:[A-Za-z_]\w*-)?[A-Za-z_]*matnr\w*)(?![\w\-(])/gi,
+      (all, pre, fld) => `${pre}(18) ${fld}`);
+    if (fixed !== code) return {rule: 'MATNR (18)', lines: [fixed]};
+  }
+
+  // 7. MESSAGE ... WITH : conflit de longueur sur un champ passe au message.
+  //    Les variables d'un MESSAGE sont typees SYST_MSGV (50 caracteres) : un
+  //    champ elargi y est tronque. On passe par une variable intermediaire
+  //    typee, seule facon de rendre la conversion explicite — CONV #( ) seul
+  //    n'a pas de type cible dans un WITH.
+  //    Comme pour les affectations, on ne touche que les champs designes dans
+  //    « Cibler » : le nom seul ne dit pas qu'un champ a ete elargi.
+  if (targets.length){
+    m = /^(MESSAGE\s+.+?)\s+WITH\s+(.+?)\.$/i.exec(code);
+    if (m){
+      const args = atcSplitTop(m[2], ' ');
+      const hits = [];
+      args.forEach((a, i) => {
+        if (targets.some(t => a.toUpperCase().includes(t))) hits.push({a, i});
+      });
+      if (hits.length){
+        const decls = [], assigns = [], outArgs = args.slice();
+        hits.forEach(({a, i}) => {
+          // Un indice par champ converti, unique sur tout le source :
+          // plusieurs champs longs peuvent figurer dans le meme message, et
+          // plusieurs messages dans le meme programme.
+          const v = 'lv_msgv' + (++atcVarSeq);
+          decls.push(`DATA ${v} TYPE syst_msgv.`);
+          assigns.push(`${v} = CONV #( ${a} ).`);
+          outArgs[i] = v;
+        });
+        return {rule: 'MESSAGE ... WITH',
+                // Un champ nomme matnr tranche de lui-meme ; sinon on s'en
+                // remet a la note de la regle, que le constat ATC affinera.
+                note: hits.some(({a}) => ATC_IS_MATNR(a)) ? '2215424' : undefined,
+                lines: [...decls, ...assigns, `${m[1]} WITH ${outArgs.join(' ')}.`]};
+      }
+    }
+  }
+
+  // 8. Affectation / calcul vers un champ cible -> CONV #( ... )
+  //    Uniquement si l'utilisateur a designe des champs : sans cela on
+  //    modifierait des lignes non demandees.
+  if (targets.length){
+    m = /^([A-Za-z_<][\w\-<>+()]*)\s*=\s*(.+?)\s*\.$/.exec(code);
+    if (m){
+      const head = code.split(/[\s(=-]/)[0].toUpperCase();
+      const rhs = m[2].trim();
+      const hit = targets.some(t => code.toUpperCase().includes(t));
+      if (hit && !ATC_KEYWORDS.has(head) && !/^CONV\b/i.test(rhs)){
+        // En ABAP les operateurs arithmetiques sont obligatoirement entoures
+        // d'espaces : un tiret colle est un separateur de composant
+        // (ls_struct-champ), pas une soustraction.
+        return {rule: /\s[+\-*/]\s/.test(rhs) ? 'Calcul' : 'Affectation',
+                lines: [`${m[1]} = CONV #( ${rhs} ).`]};
+      }
+    }
+  }
+
+  // 9. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.
+  //    Sur les tables pool/cluster devenues transparentes, l'interface base
+  //    de donnees n'ajoute plus le tri implicite par cle primaire : on le
+  //    remet explicitement.
+  //
+  //    Les garde-fous viennent de la documentation ABAP : PRIMARY KEY est
+  //    refuse avec une jointure, une expression de chemin ou UNION, et
+  //    ORDER BY ne se combine pas avec SINGLE. FOR ALL ENTRIES l'accepte,
+  //    mais a condition que tous les champs de la cle figurent dans la liste
+  //    selectionnee — invérifiable ici, donc ecarte.
+  //
+  //    L'arobase signale la syntaxe stricte, ou INTO se place en dernier :
+  //    ajouter ORDER BY en fin d'instruction y serait une erreur de syntaxe.
+  //    On s'abstient plutot que de produire du code qui ne compile pas.
+  if (/^SELECT\b/i.test(code)
+      && /\bUP\s+TO\s+\S+\s+ROWS\b/i.test(code)
+      && !/\bORDER\s+BY\b/i.test(code)
+      && !/\bSINGLE\b/i.test(code)
+      && !/\bJOIN\b/i.test(code)
+      && !/\bUNION\b/i.test(code)
+      && !/\bGROUP\s+BY\b/i.test(code)
+      && !/\bFOR\s+ALL\s+ENTRIES\b/i.test(code)
+      && !code.includes('@')){
+    return {rule: 'SELECT sans ORDER BY',
+            lines: [code.replace(/\s*\.$/, ' ORDER BY PRIMARY KEY.')]};
+  }
+
+  // 10. DELETE ADJACENT DUPLICATES sans tri prealable.
+  //     Le tri doit reprendre exactement les champs du COMPARING, dans le
+  //     meme ordre : c'est cette correspondance qui rend le resultat sur.
+  //     Sans COMPARING, la comparaison porte sur la cle entiere, et un SORT
+  //     nu convient.
+  m = /^DELETE\s+ADJACENT\s+DUPLICATES\s+FROM\s+([\w<>\-]+)\s*(?:COMPARING\s+(.+?))?\s*\.$/i.exec(code);
+  if (m && !atcDejaTriee(ctx, m[1])){
+    const champs = (m[2] || '').trim();
+    const tri = champs && !/^ALL\s+FIELDS$/i.test(champs)
+      ? `SORT ${m[1]} BY ${champs}.`
+      : `SORT ${m[1]}.`;
+    return {rule: 'DELETE ADJACENT DUPLICATES sans tri', lines: [tri, code]};
+  }
+
+  // 11. Boucle avec rupture de controle sur une table non triee.
+  //     AT NEW et AT END OF supposent les lignes rangees par les champs de
+  //     rupture : sinon les ruptures se declenchent plusieurs fois par valeur.
+  m = /^LOOP\s+AT\s+([\w<>\-]+)\b/i.exec(code);
+  if (m && !/\bWHERE\b/i.test(code) && !atcDejaTriee(ctx, m[1])){
+    const rupture = atcChampsRupture(ctx);
+    if (rupture.length){
+      return {rule: 'LOOP AT ... AT sans tri',
+              lines: [`SORT ${m[1]} BY ${rupture.join(' ')}.`, code]};
+    }
+  }
+
+  // 12. READ ... BINARY SEARCH sur une table non triee.
+  //     Volontairement limitee au niveau superieur : ce READ se trouve le
+  //     plus souvent dans une boucle, et y poser un SORT trierait a chaque
+  //     tour. La correction est alors structurelle — trier une fois avant la
+  //     boucle, ou passer en table triee — et sort de ce que peut decider une
+  //     reecriture instruction par instruction.
+  if (/^READ\s+TABLE\b/i.test(code) && /\bBINARY\s+SEARCH\b/i.test(code)
+      && ctx && !ctx.dansBoucle){
+    const table = /^READ\s+TABLE\s+([\w<>\-]+)/i.exec(code);
+    const cle = /\bWITH\s+(?:TABLE\s+)?KEY\s+(.+?)(?:\s+(?:INTO|ASSIGNING|TRANSPORTING|BINARY)\b)/i.exec(code);
+    if (table && cle && !atcDejaTriee(ctx, table[1])){
+      const champs = [];
+      for (const c of cle[1].matchAll(/([\w\-]+)\s*=/g)) champs.push(c[1]);
+      if (champs.length){
+        return {rule: 'READ ... BINARY SEARCH sans tri',
+                lines: [`SORT ${table[1]} BY ${champs.join(' ')}.`, code]};
+      }
+    }
+  }
+
+  return null;
+}
+
+function atcConvert(code, opts, disabled){
+  const marker = opts.marker || 'COD001';
+  const stamp = `${opts.author || 'AEH'}_${opts.date}_ATC`;
+  const tagOld = `"${marker}- ${stamp}`;
+  const tagNew = `"${marker}+ ${stamp}`;
+  const off = disabled || new Set();
+
+  atcVarSeq = 0;
+
+  const lines = code.split('\n');
+  const out = [];
+  const changes = [];
+
+  const stmts = atcStatements(lines);
+  // Profondeur de boucle : certaines corrections n'ont de sens qu'au niveau
+  // superieur, ou ne doivent surtout pas etre posees a l'interieur.
+  let profondeur = 0;
+
+  for (let index = 0; index < stmts.length; index++){
+    const stmt = stmts[index];
+    if (stmt.kind === 'raw'){ out.push(...stmt.lines); continue; }
+
+    const stmtCode = atcStmtCode(stmt);
+    const ouvrante = /^(LOOP|DO|WHILE)\b/i.test(stmtCode);
+    const fermante = /^(ENDLOOP|ENDDO|ENDWHILE)\b/i.test(stmtCode);
+    if (fermante && profondeur > 0) profondeur--;
+
+    const ctx = {stmts, index, dansBoucle: profondeur > 0};
+    const res = atcApplyRules(stmtCode, opts.targets, ctx);
+    if (ouvrante) profondeur++;
+    // Une note decochee laisse l'instruction totalement intacte : elle n'est
+    // ni convertie, ni meme listee. Decocher une note, c'est la sortir du
+    // perimetre de reprise, pas seulement suspendre son application.
+    if (!res || !ACTIVE_NOTES.has(atcNoteOfChange(res))){
+      out.push(...stmt.lines);
+      continue;
+    }
+    const note = atcNoteOfChange(res);
+
+    // La ligne de depart de l'instruction sert de cle stable pour la case
+    // a cocher : decochee, la conversion est listee mais pas appliquee.
+    const key = stmt.start;
+    if (off.has(key)){
+      out.push(...stmt.lines);
+      changes.push({key, applied: false, line: stmt.start + 1, rule: res.rule, note,
+                    before: stmt.lines.map(l => l.trim()).join(' '),
+                    after: res.lines.join(' ')});
+      continue;
+    }
+
+    const indent = (stmt.lines[0].match(/^\s*/) || [''])[0];
+    const multi = stmt.lines.length > 1 || res.lines.length > 1;
+
+    if (multi){
+      out.push(`*<<${marker}- ${stamp}`);
+      for (const l of stmt.lines) out.push('*' + l);
+      out.push(`*${marker}->>`);
+      out.push(`*<<${marker}+ ${stamp}`);
+      for (const l of res.lines) out.push(indent + l);
+      out.push(`*${marker}+>>`);
+    } else {
+      out.push('*' + stmt.lines[0].trimEnd() + ' ' + tagOld);
+      out.push(indent + res.lines[0] + ' ' + tagNew);
+    }
+
+    changes.push({
+      key,
+      applied: true,
+      line: stmt.start + 1,
+      rule: res.rule,
+      note,
+      before: stmt.lines.map(l => l.trim()).join(' '),
+      after: res.lines.join(' ')
+    });
+  }
+
+  return {code: out.join('\n'), changes};
+}
+
+/* --- Onglet Conversion ATC : interface --- */
+
+const $atcCode = document.getElementById('atcCode');
+const $atcEditor = document.getElementById('atcEditor');
+const $atcGutter = document.getElementById('atcGutter');
+const $atcResults = document.getElementById('atcResults');
+const $atcCount = document.getElementById('atcCount');
+const $atcHint = document.getElementById('atcHint');
+const $atcMarker = document.getElementById('atcMarker');
+const $atcAuthor = document.getElementById('atcAuthor');
+const $atcDate = document.getElementById('atcDate');
+const $atcTarget = document.getElementById('atcTarget');
+const $atcResizer = document.getElementById('atcResizer');
+
+$atcDate.value = new Date().toISOString().slice(0, 10);
+
+/* Conversions decochees, reperees par la ligne de debut de l'instruction.
+   Remis a zero des que le code change de forme (saisie, application). */
+let atcDisabled = new Set();
+
+function atcOptions(){
+  return {
+    marker: $atcMarker.value.trim() || 'COD001',
+    author: $atcAuthor.value.trim() || 'AEH',
+    date: $atcDate.value || new Date().toISOString().slice(0, 10),
+    targets: $atcTarget.value.toUpperCase().split(/[\s,;]+/).filter(Boolean)
+  };
+}
+
+function renderAtc(){
+  const code = $atcCode.value;
+  const nLines = code.split('\n').length;
+  let g = '';
+  for (let i = 1; i <= nLines; i++) g += i + '\n';
+  $atcGutter.textContent = g;
+  $atcGutter.scrollTop = $atcCode.scrollTop;
+
+  if (!code.trim()){
+    $atcHint.innerHTML = '';
+    $atcCount.textContent = '';
+    $atcResults.innerHTML = '<div class="empty"><p>Collez le code ABAP signale par l\'ATC.</p>'
+      + '<p>Les instructions obsoletes (<code>MOVE</code>, <code>ADD</code>, <code>WRITE ... TO</code>) sont converties d\'office. '
+      + 'Pour les affectations et calculs, indiquez les champs a cibler ci-dessus.</p></div>';
+    return;
+  }
+
+  const opts = atcOptions();
+  const {code: converted, changes} = atcConvert(code, opts, atcDisabled);
+  const nOn = changes.filter(c => c.applied).length;
+
+  const offNotes = ATC_NOTES.filter(x => !ACTIVE_NOTES.has(x));
+  $atcHint.innerHTML = (opts.targets.length
+      ? 'Affectations ciblees : <b>' + opts.targets.map(esc).join('</b>, <b>') + '</b>'
+      : 'Aucun champ cible — seules les instructions obsoletes sont converties.')
+    + (offNotes.length
+        ? '  ·  Note' + (offNotes.length > 1 ? 's' : '') + ' ecartee'
+          + (offNotes.length > 1 ? 's' : '') + ' : <b>' + offNotes.join('</b>, <b>') + '</b>'
+        : '');
+  $atcCount.textContent = changes.length
+    ? nOn + ' / ' + changes.length + ' conversion' + (changes.length > 1 ? 's' : '') + ' selectionnee' + (nOn > 1 ? 's' : '')
+    : 'aucune conversion applicable';
+
+  if (!changes.length){
+    // Deux silences a ne pas confondre : aucune regle ne reconnait ce code,
+    // ou toutes les notes ont ete ecartees. Le second est un choix, pas une
+    // limite de l'outil.
+    const allOff = offNotes.length === ATC_NOTES.length;
+    $atcResults.innerHTML = '<div class="empty"><p>'
+      + (allOff
+          ? 'Les deux notes de cet onglet sont decochees — aucune conversion n\'est proposee.'
+          : 'Aucune regle ne s\'applique a ce code.')
+      + '</p>'
+      + (allOff
+          ? '<p>Recochez-en une dans la barre « Notes actives ».</p>'
+          : (opts.targets.length ? '' : '<p>Pour les affectations simples et les calculs, renseignez un champ dans « Cibler ».</p>'))
+      + '</div>';
+    return;
+  }
+
+  const id = 'atc' + (++fixSeq);
+  PENDING_FIX.set(id, converted);
+
+  const allOn = nOn === changes.length;
+  let html = '<div class="fixBox"><div class="fixHead">'
+    + '<p class="fixTitle">' + nOn + ' conversion' + (nOn > 1 ? 's' : '') + ' sur ' + changes.length + '</p>'
+    + (changes.length > 1
+        ? '<button class="btn" id="atcToggleAll">' + (allOn ? 'Tout décocher' : 'Tout cocher') + '</button>'
+        : '')
+    + '<button class="btn" data-fixcopy="' + id + '"' + (nOn ? '' : ' disabled') + '>Copier le code converti</button>'
+    + '<button class="btn primary" data-atcapply="' + id + '"' + (nOn ? '' : ' disabled') + '>Appliquer dans l\'editeur</button></div>';
+
+  // Groupe par note, dans l'ordre du catalogue : c'est la note qui justifie
+  // la correction en revue, donc c'est elle qui ordonne la liste.
+  let firstGroup = true;
+  for (const note of ATC_NOTES){
+    const group = changes.filter(c => c.note === note);
+    if (!group.length) continue;
+    const nGroup = group.filter(c => c.applied).length;
+
+    html += '<div class="atcNoteHead ' + NOTE_CLASS[note] + (firstGroup ? ' first' : '') + '">'
+      + '<span class="id">' + esc(noteRef(note)) + '</span>'
+      + '<span class="lbl">' + esc(NOTE_LABEL[note]) + '</span>'
+      + '<span class="n">' + nGroup + ' / ' + group.length + '</span></div>';
+    firstGroup = false;
+
+    html += '<ul class="fixList atcList">';
+    for (const c of group){
+      html += '<li class="atcItem' + (c.applied ? '' : ' off') + '">'
+        + '<label class="atcPick">'
+        + '<input type="checkbox" data-key="' + c.key + '"' + (c.applied ? ' checked' : '') + '>'
+        + '<span class="atcNum">l.' + c.line + '</span>'
+        + '<span class="atcRule">' + esc(c.rule) + '</span></label>'
+        + '<div class="fixLine" style="margin-top:4px"><span class="del">' + esc(c.before) + '</span></div>'
+        + '<div class="fixLine" style="margin-top:2px"><span class="add">' + esc(c.after) + '</span></div></li>';
+    }
+    html += '</ul>';
+  }
+  html += '<pre class="fixPre">' + esc(converted) + '</pre></div>';
+  $atcResults.innerHTML = html;
+}
+
+$atcResults.addEventListener('change', e => {
+  const cb = e.target.closest('input[type="checkbox"][data-key]');
+  if (!cb) return;
+  const key = Number(cb.dataset.key);
+  if (cb.checked) atcDisabled.delete(key); else atcDisabled.add(key);
+  renderAtc();
+});
+
+document.getElementById('atcAlpha').addEventListener('change', e => {
+  atcAlphaOut = e.target.checked;
+  renderAtc();
+});
+
+$atcResults.addEventListener('click', e => {
+  const toggleAll = e.target.closest('#atcToggleAll');
+  if (toggleAll){
+    const boxes = [...$atcResults.querySelectorAll('input[data-key]')];
+    const allOn = boxes.every(b => b.checked);
+    atcDisabled = allOn ? new Set(boxes.map(b => Number(b.dataset.key))) : new Set();
+    renderAtc();
+    return;
+  }
+
+  const apply = e.target.closest('[data-atcapply]');
+  if (apply){
+    const fixed = PENDING_FIX.get(apply.dataset.atcapply);
+    if (fixed === undefined) return;
+    $atcCode.value = fixed;
+    // Les numeros de ligne changent apres application : les cases decochees
+    // ne designeraient plus les memes instructions.
+    atcDisabled = new Set();
+    renderAtc();
+    return;
+  }
+  const copy = e.target.closest('[data-fixcopy]');
+  if (copy){
+    const fixed = PENDING_FIX.get(copy.dataset.fixcopy);
+    if (fixed === undefined) return;
+    navigator.clipboard.writeText(fixed).then(() => {
+      copy.textContent = 'Copié';
+      setTimeout(() => { copy.textContent = 'Copier le code converti'; }, 1400);
+    });
+  }
+});
+
+let atcTa;
+const atcRerender = () => { clearTimeout(atcTa); atcTa = setTimeout(renderAtc, 150); };
+// Le code edite invalide les cles de lignes : on repart de tout coche.
+$atcCode.addEventListener('input', () => { atcDisabled = new Set(); atcRerender(); });
+for (const el of [$atcMarker, $atcAuthor, $atcDate, $atcTarget]) el.addEventListener('input', atcRerender);
+$atcCode.addEventListener('scroll', () => { $atcGutter.scrollTop = $atcCode.scrollTop; });
+$atcCode.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  e.preventDefault();
+  const s = $atcCode.selectionStart, en = $atcCode.selectionEnd;
+  $atcCode.value = $atcCode.value.slice(0, s) + '  ' + $atcCode.value.slice(en);
+  $atcCode.selectionStart = $atcCode.selectionEnd = s + 2;
+  atcRerender();
+});
+document.getElementById('atcBtn').addEventListener('click', renderAtc);
+
+let atcResizing = false, atcStartY = 0, atcStartH = 0;
+$atcResizer.addEventListener('mousedown', e => {
+  atcResizing = true; atcStartY = e.clientY;
+  atcStartH = $atcEditor.getBoundingClientRect().height;
+  document.body.style.userSelect = 'none';
+  e.preventDefault();
+});
+window.addEventListener('mousemove', e => {
+  if (!atcResizing) return;
+  $atcEditor.style.height =
+    Math.min(window.innerHeight * 0.8, Math.max(140, atcStartH + (e.clientY - atcStartY))) + 'px';
+});
+window.addEventListener('mouseup', () => {
+  if (!atcResizing) return;
+  atcResizing = false;
+  document.body.style.userSelect = '';
+});
+
+const TAB_PANELS = {
+  search: {controls: 'searchControls', panel: 'panel-search'},
+  analyze: {controls: 'analyzeControls', panel: 'panel-analyze'},
+  acdoca: {controls: 'acdocaControls', panel: 'panel-acdoca'},
+  atc: {controls: 'atcControls', panel: 'panel-atc'}
+};
+
+/* ---- Barre « Notes actives », commune aux quatre onglets ----------------
+   Une seule barre, un seul ensemble : ecarter une note la retire de toute la
+   page. Les notes qui ne pesent pas sur l'onglet ouvert restent affichees et
+   cochables, mais en retrait — la couverture se lit d'un coup d'oeil, sans
+   changer d'onglet. */
+
+let currentTab = 'search';
+
+function renderNoteBar(){
+  let html = '<span class="lead">Notes actives</span><div class="seg">';
+  for (const note of NOTE_CATALOG){
+    const used = NOTE_TABS[note.domain].includes(currentTab);
+    // L'aide passe par une infobulle maison : celle du navigateur met une
+    // seconde a apparaitre et ne tient pas sur plusieurs lignes.
+    html += '<button data-n="' + note.id + '"'
+      + ' aria-pressed="' + (ACTIVE_NOTES.has(note.id) ? 'true' : 'false') + '"'
+      + (used ? '' : ' data-idle="1"')
+      + ' aria-label="' + esc((note.note ? 'Note ' + note.note + ' — ' : '') + note.label) + '">'
+      + esc(note.short || note.id) + '</button>';
+  }
+  html += '</div>';
+  const off = NOTE_CATALOG.filter(x => !ACTIVE_NOTES.has(x.id)).length;
+  html += off
+    ? '<span class="tail">' + off + ' ecartee' + (off > 1 ? 's' : '') + ' sur '
+      + NOTE_CATALOG.length + '</span>'
+    : '';
+  return html + '<div class="noteTip" id="noteTip" hidden></div>';
+}
+
+/* Seul l'onglet ouvert peut changer d'aspect : inutile de redessiner les autres. */
+function renderCurrentTab(){
+  if (currentTab === 'analyze') renderAnalysis();
+  else if (currentTab === 'acdoca') renderAcdoca();
+  else if (currentTab === 'atc') renderAtc();
+  else compute();
+}
+
+const $noteBar = document.getElementById('noteBar');
+
+$noteBar.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (ACTIVE_NOTES.has(b.dataset.n)) ACTIVE_NOTES.delete(b.dataset.n);
+  else ACTIVE_NOTES.add(b.dataset.n);
+  $noteBar.innerHTML = renderNoteBar();
+  renderCurrentTab();
+});
+
+/* Survol : on explique la note avant que l'utilisateur ait a cliquer. */
+$noteBar.addEventListener('mouseover', e => {
+  const b = e.target.closest('button[data-n]');
+  const tip = document.getElementById('noteTip');
+  if (!b || !tip) return;
+  const note = NOTE_CATALOG.find(x => x.id === b.dataset.n);
+  if (!note) return;
+
+  const used = NOTE_TABS[note.domain].includes(currentTab);
+  // Trois niveaux, et le troisieme compte autant que les autres : dire ce que
+  // la note couvre sans dire ce qu'elle laisse a la main ferait croire le
+  // travail termine.
+  tip.innerHTML = '<span class="titre">'
+      + esc((note.note ? note.note + ' — ' : '') + note.label) + '</span>'
+    + esc(note.aide || '')
+    + (note.couvre ? '<span class="fait">Corrigé ici : ' + esc(note.couvre) + '</span>' : '')
+    + (note.manuel ? '<span class="reste">À reprendre à la main : ' + esc(note.manuel) + '</span>' : '')
+    + (used ? '' : '<span class="ou">Agit sur l’onglet '
+        + esc(NOTE_TABS_LABEL[note.domain]) + '.</span>');
+  // Alignee sur le bouton survole, sans jamais deborder a droite.
+  const gauche = b.getBoundingClientRect().left - $noteBar.getBoundingClientRect().left;
+  tip.style.left = Math.max(0, Math.min(gauche, $noteBar.clientWidth - 300)) + 'px';
+  tip.hidden = false;
+});
+
+$noteBar.addEventListener('mouseleave', () => {
+  const tip = document.getElementById('noteTip');
+  if (tip) tip.hidden = true;
+});
+
+$noteBar.innerHTML = renderNoteBar();
+
+/* ---- Donnees chargees depuis le poste ----------------------------------
+   Le build public ne les embarque pas. On les lit ici avec l'API Fichier :
+   tout se passe dans le navigateur, aucun envoi. */
+
+const $dataBar = document.getElementById('dataBar');
+const $dataEtat = document.getElementById('dataEtat');
+
+function donneesManquantes(){
+  const manque = [];
+  if (!MODULES.length) manque.push('index.json');
+  if (!ACDOCA_DATA.length) manque.push('acdoca_fields.json');
+  if (!Object.keys(STRUCT_FIELDS).length) manque.push('struct_fields.json');
+  return manque;
+}
+
+function majBarreDonnees(){
+  const manque = donneesManquantes();
+  if (!manque.length){ $dataBar.hidden = true; return; }
+  $dataBar.hidden = false;
+  $dataEtat.textContent = 'Données non chargées : ' + manque.join(', ')
+    + '. Les onglets Conversion ATC et « sans note » fonctionnent sans elles.';
+}
+
+function appliquerDonnees(nom, contenu){
+  if (nom.includes('index')){
+    DATA = contenu;
+    MODULES = Object.keys(DATA);
+  } else if (nom.includes('acdoca')){
+    ACDOCA_DATA = contenu;
+    construireAcdocaIndex();
+  } else if (nom.includes('struct')){
+    // Le fichier brut n'a pas de dictionnaire de types : la normalisation
+    // accepte les deux formes.
+    STRUCT_FIELDS = normaliserStructs(contenu);
+  } else {
+    return false;
+  }
+  return true;
+}
+
+document.getElementById('dataFiles').addEventListener('change', e => {
+  const fichiers = [...e.target.files];
+  if (!fichiers.length) return;
+  let restants = fichiers.length;
+  const refuses = [];
+
+  for (const fichier of fichiers){
+    const lecteur = new FileReader();
+    lecteur.onload = () => {
+      try {
+        if (!appliquerDonnees(fichier.name.toLowerCase(), JSON.parse(lecteur.result))){
+          refuses.push(fichier.name + ' (nom non reconnu)');
+        }
+      } catch (err){
+        refuses.push(fichier.name + ' (' + err.message + ')');
+      }
+      if (--restants === 0) termine(refuses);
+    };
+    lecteur.onerror = () => {
+      refuses.push(fichier.name + ' (lecture impossible)');
+      if (--restants === 0) termine(refuses);
+    };
+    lecteur.readAsText(fichier);
+  }
+
+  function termine(refuses){
+    majBarreDonnees();
+    if (refuses.length){
+      $dataEtat.textContent = 'Non chargé : ' + refuses.join(', ');
+      $dataBar.hidden = false;
+    }
+    // Les compteurs de l'en-tete et l'onglet ouvert refletent les donnees.
+    majCompteurs();
+    renderCurrentTab();
+  }
+  e.target.value = '';
+});
+
+/* Compteurs de l'en-tete, quand ils existent dans ce build. */
+function majCompteurs(){
+  const paires = [['nbModules', MODULES.length], ['nbAcdoca', ACDOCA_DATA.length],
+                  ['nbStructs', Object.keys(STRUCT_FIELDS).length]];
+  for (const [id, valeur] of paires){
+    const el = document.getElementById(id);
+    if (el) el.textContent = valeur.toLocaleString('fr-FR');
+  }
+}
+
+majBarreDonnees();
+
+document.getElementById('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  for (const s of e.currentTarget.children) s.setAttribute('aria-pressed', String(s === b));
+  const active = b.dataset.v;
+  currentTab = active;
+  $noteBar.innerHTML = renderNoteBar();
+  for (const key of Object.keys(TAB_PANELS)){
+    const isActive = key === active;
+    document.getElementById(TAB_PANELS[key].controls).hidden = !isActive;
+    document.getElementById(TAB_PANELS[key].panel).hidden = !isActive;
+  }
+  updateHeaderOffset();
+  if (active === 'analyze'){ renderAnalysis(); $code.focus(); }
+  else if (active === 'acdoca'){ renderAcdoca(); $acCode.focus(); }
+  else if (active === 'atc'){ renderAtc(); $atcCode.focus(); }
+  else { $q.focus(); }
+});
+
+function updateHeaderOffset(){
+  const h = document.querySelector('header').getBoundingClientRect().height;
+  document.documentElement.style.setProperty('--header-h', h + 'px');
+}
+window.addEventListener('resize', updateHeaderOffset);
+updateHeaderOffset();
+
+const $header = document.querySelector('header');
+function updateHeaderShadow(){ $header.classList.toggle('scrolled', window.scrollY > 4); }
+window.addEventListener('scroll', updateHeaderShadow, {passive: true});
+updateHeaderShadow();
+
+/* ---- Theme : auto (systeme) / clair / sombre ----
+   La preference est memorisee ; "auto" est resolu en clair ou sombre pour que
+   le CSS n'ait qu'un seul jeu de regles a porter. */
+const THEME_KEY = 's4check-theme';
+const themeMQ = window.matchMedia('(prefers-color-scheme: dark)');
+let themePref = 'auto';
+try { themePref = localStorage.getItem(THEME_KEY) || 'auto'; } catch (e) { /* file:// restreint */ }
+
+function applyTheme(){
+  document.documentElement.dataset.theme =
+    themePref === 'auto' ? (themeMQ.matches ? 'dark' : 'light') : themePref;
+  for (const b of document.getElementById('themeSeg').children){
+    b.setAttribute('aria-pressed', String(b.dataset.t === themePref));
+  }
+}
+
+document.getElementById('themeSeg').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  themePref = b.dataset.t;
+  try { localStorage.setItem(THEME_KEY, themePref); } catch (e) { /* ignore */ }
+  applyTheme();
+});
+
+themeMQ.addEventListener('change', () => { if (themePref === 'auto') applyTheme(); });
+applyTheme();
+</script>
+</body>
+</html>

@@ -13,7 +13,7 @@
     - toute redistribution, mise a disposition ou publication
     - toute reutilisation de tout ou partie du code dans un autre produit
 
-  Build : 2026-08-30
+  Build : 2026-08-31
   L'empreinte SHA-256 de la version authentique est fournie separement
   (fichier .sha256). Un exemplaire dont l'empreinte differe a ete modifie.
 
@@ -584,7 +584,7 @@ html[data-theme="dark"] .fixPre{background:#191920}
   <kbd>/</kbd> pour chercher · <kbd>Échap</kbd> pour effacer · recherche insensible à la casse, sous-chaîne.
   Page autonome, aucune connexion réseau requise.
   <div class="legal">
-    © 2026 Codilog — build 2026-08-30.
+    © 2026 Codilog — build 2026-08-31.
     Usage interne réservé à Codilog. Modification, redistribution et
     réutilisation soumises à autorisation écrite de Codilog.
   </div>
@@ -669,9 +669,12 @@ const NOTE_CATALOG = [
        + "de chaîne qui l’entoure qui est concerné : déclarations en CHAR 18, "
        + "comparaisons avec un champ plus court, concaténations, accès par offset, "
        + "variables de message, paramètres typés.",
-   couvre: "affichage sur 18 positions, ALPHA = OUT, MESSAGE ... WITH",
-   manuel: "comparaisons, concaténations, offsets figés à 18, MOVE-CORRESPONDING et "
-         + "paramètres de CALL FUNCTION — la conversion dépend du champ en cause"},
+   couvre: "affichage sur 18 positions, ALPHA = OUT, MESSAGE ... WITH, "
+         + "CONCATENATE réécrit en modèle de chaîne",
+   manuel: "comparaisons, offsets figés à 18, MOVE-CORRESPONDING et paramètres de "
+         + "CALL FUNCTION. Pour un CONCATENATE, le modèle de chaîne ne supprime le "
+         + "débordement que si la cible est de type string : sinon l'affectation "
+         + "tronque toujours"},
   // Sans numero de note : ce sont des controles de programmation robuste, pas
   // des points de simplification S/4. Ils partagent pourtant une seule cause
   // — le code s'appuie sur un ordre de lignes que HANA ne garantit plus — et
@@ -2399,6 +2402,7 @@ const ATC_RULE_NOTE = {
   "Calcul": "2610650",
   "MATNR (18)": "2215424",
   "MESSAGE ... WITH": "2215424",
+  "CONCATENATE": "2215424",
   "SELECT sans ORDER BY": "ORDRE",
   "DELETE ADJACENT DUPLICATES sans tri": "ORDRE",
   "LOOP AT ... AT sans tri": "ORDRE",
@@ -2491,7 +2495,41 @@ function atcApplyRules(code, targets, ctx){
     if (fixed !== code) return {rule: 'MATNR (18)', lines: [fixed]};
   }
 
-  // 7. MESSAGE ... WITH : conflit de longueur sur un champ passe au message.
+  // 7. CONCATENATE -> modele de chaine.
+  //    Un champ elargi fait deborder la cible : le resultat est tronque en
+  //    silence. Le modele de chaine est la forme moderne, et son
+  //    comportement est identique ici — pour un champ de type C, CONCATENATE
+  //    comme la conversion vers string suppriment les blancs de fin.
+  //
+  //    Attention : cette reecriture ne supprime pas le debordement a elle
+  //    seule. Si la cible reste de longueur fixe, l'affectation tronque
+  //    toujours. Elle ne disparait que si la cible est de type string — ce
+  //    que la seule instruction ne dit pas, d'ou la decision laissee a la
+  //    revue.
+  //
+  //    Ecartes : RESPECTING BLANKS, dont la semantique differe, et les
+  //    litteraux a blancs de fin, que le modele conserve alors que
+  //    CONCATENATE les jette.
+  if (targets.length){
+    m = /^CONCATENATE\s+(.+?)\s+INTO\s+([\w<>\-]+)(?:\s+SEPARATED\s+BY\s+(\S+?))?\s*\.$/i.exec(code);
+    if (m && !/\bRESPECTING\s+BLANKS\b/i.test(code) && !/\bIN\s+BYTE\s+MODE\b/i.test(code)){
+      const ops = atcSplitTop(m[1], ' ');
+      const litteralAvecBlanc = ops.some(o => /^'.*\s'$/.test(o));
+      const vise = ops.some(o => targets.some(t => o.toUpperCase().includes(t)));
+      if (ops.length > 1 && vise && !litteralAvecBlanc){
+        const sep = m[3] ? m[3].trim() : '';
+        const morceaux = [];
+        ops.forEach((o, i) => {
+          if (i && sep) morceaux.push(`{ ${sep} }`);
+          morceaux.push(`{ ${o} }`);
+        });
+        return {rule: 'CONCATENATE',
+                lines: [`${m[2].trim()} = |${morceaux.join('')}|.`]};
+      }
+    }
+  }
+
+  // 8. MESSAGE ... WITH : conflit de longueur sur un champ passe au message.
   //    Les variables d'un MESSAGE sont typees SYST_MSGV (50 caracteres) : un
   //    champ elargi y est tronque. On passe par une variable intermediaire
   //    typee, seule facon de rendre la conversion explicite — CONV #( ) seul
@@ -2526,7 +2564,7 @@ function atcApplyRules(code, targets, ctx){
     }
   }
 
-  // 8. Affectation / calcul vers un champ cible -> CONV #( ... )
+  // 9. Affectation / calcul vers un champ cible -> CONV #( ... )
   //    Uniquement si l'utilisateur a designe des champs : sans cela on
   //    modifierait des lignes non demandees.
   if (targets.length){
@@ -2545,7 +2583,7 @@ function atcApplyRules(code, targets, ctx){
     }
   }
 
-  // 9. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.
+  // 10. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.
   //    Sur les tables pool/cluster devenues transparentes, l'interface base
   //    de donnees n'ajoute plus le tri implicite par cle primaire : on le
   //    remet explicitement.
@@ -2572,7 +2610,7 @@ function atcApplyRules(code, targets, ctx){
             lines: [code.replace(/\s*\.$/, ' ORDER BY PRIMARY KEY.')]};
   }
 
-  // 10. DELETE ADJACENT DUPLICATES sans tri prealable.
+  // 11. DELETE ADJACENT DUPLICATES sans tri prealable.
   //     Le tri doit reprendre exactement les champs du COMPARING, dans le
   //     meme ordre : c'est cette correspondance qui rend le resultat sur.
   //     Sans COMPARING, la comparaison porte sur la cle entiere, et un SORT
@@ -2586,7 +2624,7 @@ function atcApplyRules(code, targets, ctx){
     return {rule: 'DELETE ADJACENT DUPLICATES sans tri', lines: [tri, code]};
   }
 
-  // 11. Boucle avec rupture de controle sur une table non triee.
+  // 12. Boucle avec rupture de controle sur une table non triee.
   //     AT NEW et AT END OF supposent les lignes rangees par les champs de
   //     rupture : sinon les ruptures se declenchent plusieurs fois par valeur.
   m = /^LOOP\s+AT\s+([\w<>\-]+)\b/i.exec(code);
@@ -2598,7 +2636,7 @@ function atcApplyRules(code, targets, ctx){
     }
   }
 
-  // 12. READ ... BINARY SEARCH sur une table non triee.
+  // 13. READ ... BINARY SEARCH sur une table non triee.
   //     Volontairement limitee au niveau superieur : ce READ se trouve le
   //     plus souvent dans une boucle, et y poser un SORT trierait a chaque
   //     tour. La correction est alors structurelle — trier une fois avant la

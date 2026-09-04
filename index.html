@@ -1590,6 +1590,12 @@ function buildFixBox(code, a, mod){
   const pragma = mod ? addPragma(corrected, mod, hitNotes) : {code: corrected, applied: null};
   corrected = pragma.code;
 
+  // Convention de l'equipe : la ligne d'origine est conservee en commentaire,
+  // la nouvelle est signee. Elle vaut pour les trois onglets qui reecrivent —
+  // remplacer en place ne laissait aucune trace de ce qui avait ete change,
+  // et rendait la relecture impossible.
+  corrected = signerLignes(code, corrected, atcOptions());
+
   if (!renames.length && !types.length && !matnr.length && !pragma.applied) return '';
 
   const id = 'fix' + (++fixSeq);
@@ -2301,6 +2307,13 @@ function buildAcdocaRewrite(code, table, rows){
  * doit s'appliquer partout de la meme facon, sinon une relecture ne sait
  * plus d'ou vient une ligne.
  */
+/** Vrai si la nouvelle ligne n'ajoute qu'un pseudo-commentaire ATC. */
+function pragmaSeul(avant, apres){
+  const i = apres.indexOf('"#EC ');
+  if (i < 0) return false;
+  return apres.slice(0, i).trimEnd() === avant.trimEnd();
+}
+
 function signerLignes(original, reecrit, opts){
   const avant = original.split('\n');
   const apres = reecrit.split('\n');
@@ -2311,6 +2324,13 @@ function signerLignes(original, reecrit, opts){
   const out = [];
   for (let i = 0; i < apres.length; i++){
     if (avant[i] === apres[i]){
+      out.push(apres[i]);
+      continue;
+    }
+    // Ligne dont le seul ajout est un pseudo-commentaire ATC : on la laisse
+    // telle quelle. Le pragma nomme deja la note qu'il masque, et lui coller
+    // un second commentaire risquerait d'empecher l'ATC de le reconnaitre.
+    if (pragmaSeul(avant[i] || '', apres[i])){
       out.push(apres[i]);
       continue;
     }
@@ -3588,8 +3608,9 @@ document.getElementById('tabs').addEventListener('click', e => {
     document.getElementById(TAB_PANELS[key].controls).hidden = !isActive;
     document.getElementById(TAB_PANELS[key].panel).hidden = !isActive;
   }
-  // La signature ne concerne que les onglets qui reecrivent du code.
-  document.getElementById('signControls').hidden = !(active === 'atc' || active === 'acdoca');
+  // La signature concerne les trois onglets qui reecrivent du code.
+  document.getElementById('signControls').hidden =
+      !(active === 'atc' || active === 'acdoca' || active === 'analyze');
   updateHeaderOffset();
   if (active === 'analyze'){ renderAnalysis(); $code.focus(); }
   else if (active === 'acdoca'){ renderAcdoca(); $acCode.focus(); }

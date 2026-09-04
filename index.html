@@ -1530,19 +1530,131 @@ function replaceWholeWord(code, from, to, sources){
   return {code: out, count};
 }
 
-function buildAfleFixes(code, a){
+/**
+ * Les variables du code colle qui portent la structure d'un parametre touche.
+ *
+ * <p>C'est ce qui permet de ne renommer un champ que la ou il appartient
+ * vraiment au parametre. MATERIAL est un nom repandu : le renommer partout
+ * revenait a corriger des structures maison qui n'ont rien a voir avec la
+ * BAPI, et a produire du code qui ne compile plus.
+ *
+ * <p>Trois provenances, du plus sur au plus deduit : la declaration par le
+ * type DDIC de la structure, la variable passee au parametre dans l'appel,
+ * et les zones de travail tirees d'une table deja reconnue.
+ */
+function porteursDeParametre(code, parametre, structure){
+  const actif = masquerCommentaires(code);
+  const noms = new Set();
+
+  if (structure){
+    const re = new RegExp(
+      '([A-Za-z_][A-Za-z0-9_]*)\\s+(?:TYPE|LIKE)\\s+'
+      + '(?:(?:STANDARD|SORTED|HASHED)\\s+)?(?:TABLE\\s+OF\\s+)?(?:LINE\\s+OF\\s+)?'
+      + escapeRegExp(structure) + '(?![A-Za-z0-9_])', 'gi');
+    let m;
+    while ((m = re.exec(actif))) noms.add(m[1].toLowerCase());
+  }
+
+  const reLien = new RegExp('(?:^|[^A-Za-z0-9_/])' + escapeRegExp(parametre)
+    + '\\s*=\\s*([A-Za-z_][A-Za-z0-9_]*)', 'gi');
+  let b;
+  while ((b = reLien.exec(actif))) noms.add(b[1].toLowerCase());
+
+  // LOOP AT lt_x INTO ls_y : ls_y porte la meme structure. Repete jusqu'a
+  // stabilite, une zone de travail pouvant en alimenter une autre.
+  const reZone = /\b(?:LOOP\s+AT|READ\s+TABLE)\s+([A-Za-z_][A-Za-z0-9_]*)[^.]*?\b(?:INTO|ASSIGNING)\s+(?:FIELD-SYMBOL\()?\s*<?([A-Za-z_][A-Za-z0-9_]*)>?/gi;
+  let bouge = true;
+  while (bouge){
+    bouge = false;
+    reZone.lastIndex = 0;
+    let w;
+    while ((w = reZone.exec(actif))){
+      if (noms.has(w[1].toLowerCase()) && !noms.has(w[2].toLowerCase())){
+        noms.add(w[2].toLowerCase());
+        bouge = true;
+      }
+    }
+  }
+  return noms;
+}
+
+/**
+ * Renomme un champ la ou il appartient au parametre, et nulle part ailleurs.
+ *
+ * <p>Deux contextes seulement sont retenus :
+ * <ul>
+ *   <li><code>porteur-champ</code>, y compris <code>lt_x[ 1 ]-champ</code>
+ *       et <code>&lt;fs&gt;-champ</code> ;</li>
+ *   <li><code>champ = ...</code> a l'interieur d'une instruction qui
+ *       construit la structure (VALUE, CORRESPONDING) en nommant un porteur,
+ *       ou a l'interieur de l'appel lui-meme.</li>
+ * </ul>
+ *
+ * <p>Le reste est laisse tel quel et compte : mieux vaut une occurrence non
+ * traitee et signalee qu'une correction posee au hasard du nom.
+ */
+function renommerDansParametre(code, from, to, porteurs, mod){
+  const lignes = code.split('\n');
+  const nomme = new Array(lignes.length).fill(false);
+
+  const reAppel = mod ? new RegExp("CALL\\s+FUNCTION\\s+'" + escapeRegExp(mod) + "'", 'i') : null;
+  const rePorteurs = [...porteurs].map(x =>
+    new RegExp('(^|[^A-Za-z0-9_/<>])' + escapeRegExp(x) + '(?![A-Za-z0-9_/])', 'i'));
+
+  for (const st of atcStatements(lignes)){
+    if (st.kind === 'raw') continue;
+    const texte = atcStmtCode(st);
+    const construit = /\bVALUE\b|\bCORRESPONDING\b/i.test(texte)
+      && rePorteurs.some(re => re.test(texte));
+    if (construit || (reAppel && reAppel.test(texte))){
+      for (let i = st.start; i <= st.end; i++) nomme[i] = true;
+    }
+  }
+
+  const rePorteur = new RegExp(
+    '(^|[^A-Za-z0-9_/<>~-])(<?[A-Za-z_][A-Za-z0-9_]*>?)(\\s*\\[[^\\]]*\\])?([-~])('
+    + escapeRegExp(from) + ')(?![A-Za-z0-9_/])', 'gi');
+  const reNomme = new RegExp(
+    '(^|[^A-Za-z0-9_/<>~-])(' + escapeRegExp(from) + ')(?![A-Za-z0-9_/])(\\s*=)', 'gi');
+
+  let count = 0;
+  const out = lignes.map((ligne, i) => {
+    if (/^\*/.test(ligne)) return ligne;
+    const coupe = atcStripComment(ligne);
+    let c = coupe.code.replace(rePorteur, (tout, avant, nom, index, sep, champ) => {
+      if (!porteurs.has(nom.replace(/[<>]/g, '').toLowerCase())) return tout;
+      count++;
+      return avant + nom + (index || '') + sep + matchCase(champ, to);
+    });
+    if (nomme[i]){
+      c = c.replace(reNomme, (tout, avant, champ, apres) => {
+        count++;
+        return avant + matchCase(champ, to) + apres;
+      });
+    }
+    return c + coupe.comment;
+  });
+
+  // Ce qui reste : present dans le code vivant, mais pas rattachable.
+  const total = replaceWholeWordCode(code, from, to).count;
+  return {code: out.join('\n'), count, restants: Math.max(0, total - count)};
+}
+
+function buildAfleFixes(code, a, mod){
   const fixes = [];
   const seen = new Set();
   for (const r of a['2628704'].rows){
+    if (r.state === 'none') continue;
     if (!r.vHit || r.searchValue === r.value) continue;
     const key = r.searchValue.toUpperCase() + '>' + r.value.toUpperCase();
     if (seen.has(key)) continue;
-    const {count} = replaceWholeWordCode(code, r.searchValue, r.value);
-    if (!count) continue;
     seen.add(key);
-    fixes.push({from: r.searchValue, to: r.value, count, param: r.parameter});
+    const porteurs = porteursDeParametre(code, r.parameter, null);
+    const res = renommerDansParametre(code, r.searchValue, r.value, porteurs, mod);
+    fixes.push({from: r.searchValue, to: r.value, count: res.count,
+                restants: res.restants, param: r.parameter, porteurs});
   }
-  return fixes;
+  return fixes.filter(f => f.count || f.restants);
 }
 
 /* On ne suggere une declaration que si le type DDIC n'apparait NULLE PART
@@ -1563,28 +1675,37 @@ const TYPE_NOTES = ["2438131", "2438006"];   // notes portant sur les types de p
    parametre absent de l'appel. */
 const ORDRE_ETATS = {full: 0, field: 1, param: 2, none: 3};
 
-function buildLongFieldFixes(code, a){
-  const fixes = [];
-  const seen = new Set();
+function buildLongFieldFixes(code, a, mod){
+  // Un meme champ peut venir de plusieurs parametres : on reunit leurs
+  // porteurs sous une seule proposition, la justification restant celle du
+  // parametre le mieux etabli.
+  const parPaire = new Map();
   for (const note of NOTES){
     const rows = a[note].rows.slice()
       .sort((x, y) => ORDRE_ETATS[x.state] - ORDRE_ETATS[y.state]);
     for (const r of rows){
       if (r.state === 'none') continue;
       if (!r.structDetail) continue;
+      const porteurs = porteursDeParametre(code, r.parameter, r.value);
       for (const f of r.structDetail.matched){
         if (!f.longField || !f.fHit) continue;
-        if (seen.has(f.field + '>' + f.longField)) continue;
-        const {count} = replaceWholeWordCode(code, f.field, f.longField);
-        if (!count) continue;
-        seen.add(f.field + '>' + f.longField);
-        fixes.push({
-          from: f.field, to: f.longField, count,
-          struct: r.value, param: r.parameter, note,
-          material: isMaterialType(f.type)
-        });
+        const cle = f.field + '>' + f.longField;
+        let e = parPaire.get(cle);
+        if (!e){
+          e = {from: f.field, to: f.longField, struct: r.value, param: r.parameter,
+               note, material: isMaterialType(f.type), porteurs: new Set()};
+          parPaire.set(cle, e);
+        }
+        for (const x of porteurs) e.porteurs.add(x);
       }
     }
+  }
+
+  const fixes = [];
+  for (const e of parPaire.values()){
+    const res = renommerDansParametre(code, e.from, e.to, e.porteurs, mod);
+    if (!res.count && !res.restants) continue;
+    fixes.push({...e, count: res.count, restants: res.restants});
   }
   return fixes;
 }
@@ -1694,15 +1815,30 @@ function addPragma(code, mod, notes){
 }
 
 function buildFixBox(code, a, mod){
-  const afle = buildAfleFixes(code, a);
-  const longs = buildLongFieldFixes(code, a);
+  const afle = buildAfleFixes(code, a, mod);
+  const longs = buildLongFieldFixes(code, a, mod);
   const types = buildTypeSuggestions(a);
   const matnr = buildMatnrGuidance(a);
   const hitNotes = mod ? notesHit(a) : [];
 
+  // Un meme renommage peut etre etabli deux fois : par la note AFLE, qui
+  // nomme directement le champ long, et par le releve DDIC de la structure,
+  // qui voit la paire. C'est la meme correction — l'annoncer deux fois
+  // n'apprend rien. On garde la version qui rattache le plus d'occurrences.
+  const parRenommage = new Map();
+  for (const f of afle.concat(longs)){
+    const cle = (f.from + '>' + f.to).toLowerCase();
+    const deja = parRenommage.get(cle);
+    if (!deja || f.count > deja.count) parRenommage.set(cle, f);
+  }
+
   let corrected = code;
-  const renames = afle.concat(longs);
-  for (const f of renames) corrected = replaceWholeWordCode(corrected, f.from, f.to).code;
+  const tous = [...parRenommage.values()];
+  const renames = tous.filter(f => f.count);          // reellement reecrits
+  const orphelins = tous.filter(f => !f.count);       // vus, non rattachables
+  for (const f of renames){
+    corrected = renommerDansParametre(corrected, f.from, f.to, f.porteurs, mod).code;
+  }
 
   const pragma = mod ? addPragma(corrected, mod, hitNotes) : {code: corrected, applied: null};
   corrected = pragma.code;
@@ -1716,7 +1852,7 @@ function buildFixBox(code, a, mod){
   // Rien a reecrire : le pragma est alors la reponse complete au constat,
   // et c'est ce qu'il faut dire — sinon l'utilisateur cherche la correction
   // qui manque.
-  const seulPragma = !renames.length && !types.length && !matnr.length;
+  const seulPragma = !renames.length && !orphelins.length && !types.length && !matnr.length;
 
   if (seulPragma && !pragma.applied) return '';
 
@@ -1731,26 +1867,60 @@ function buildFixBox(code, a, mod){
   }
   html += '</div>';
 
+  // Occurrences vues dans le code mais rattachees a aucune variable portant
+  // la structure du parametre. Les compter et les nommer, sans y toucher.
+  const resteHtml = f => f.restants
+    ? '<span class="fixAmbig">' + f.restants + ' hors parametre</span>'
+    : '';
+
   if (renames.length){
     html += '<ul class="fixList">';
-    for (const f of afle){
-      html += '<li><div class="fixLine"><span class="del">' + esc(f.from) + '</span>'
-        + '<span class="arrow">&rarr;</span><span class="add">' + esc(f.to) + '</span>'
-        + '<span class="sub">' + f.count + ' occurrence' + (f.count > 1 ? 's' : '') + '</span></div>'
-        + '<span class="fixWhy">Note 2628704 — champ etendu (AFLE) du parametre <b>' + esc(f.param) + '</b>.</span></li>';
-    }
-    for (const f of longs){
+    for (const f of renames.filter(x => !x.note)){
       html += '<li><div class="fixLine"><span class="del">' + esc(f.from) + '</span>'
         + '<span class="arrow">&rarr;</span><span class="add">' + esc(f.to) + '</span>'
         + '<span class="sub">' + f.count + ' occurrence' + (f.count > 1 ? 's' : '') + '</span>'
-        + (f.material ? '<span class="matTag">n° article</span>' : '') + '</div>'
+        + resteHtml(f) + '</div>'
+        + '<span class="fixWhy">Note 2628704 — champ etendu (AFLE) du parametre <b>' + esc(f.param) + '</b>.'
+        + (f.restants ? ' ' + f.restants + ' autre' + (f.restants > 1 ? 's' : '')
+            + ' occurrence' + (f.restants > 1 ? 's' : '') + ' de <b>' + esc(f.from)
+            + '</b> dans le code n\'appartien' + (f.restants > 1 ? 'nent' : 't')
+            + ' pas a ce parametre : laissee' + (f.restants > 1 ? 's' : '') + ' telle'
+            + (f.restants > 1 ? 's' : '') + ' quelle' + (f.restants > 1 ? 's' : '') + '.' : '')
+        + '</span></li>';
+    }
+    for (const f of renames.filter(x => x.note)){
+      html += '<li><div class="fixLine"><span class="del">' + esc(f.from) + '</span>'
+        + '<span class="arrow">&rarr;</span><span class="add">' + esc(f.to) + '</span>'
+        + '<span class="sub">' + f.count + ' occurrence' + (f.count > 1 ? 's' : '') + '</span>'
+        + (f.material ? '<span class="matTag">n° article</span>' : '')
+        + resteHtml(f) + '</div>'
         + '<span class="fixWhy">Note ' + f.note + ' — <b>' + esc(f.struct) + '</b> (parametre <b>'
         + esc(f.param) + '</b>) expose les deux champs : <b>' + esc(f.from)
         + '</b> reste tronque, <b>' + esc(f.to) + '</b> porte la valeur complete.'
         + (f.note === '2438006'
             ? ' Pour un module ALE, verifiez que les deux champs sont alimentes (note 2381584).'
             : '')
+        + (f.restants ? ' ' + f.restants + ' autre' + (f.restants > 1 ? 's' : '')
+            + ' occurrence' + (f.restants > 1 ? 's' : '') + ' de <b>' + esc(f.from)
+            + '</b> dans le code n\'appartien' + (f.restants > 1 ? 'nent' : 't')
+            + ' pas a ce parametre : laissee' + (f.restants > 1 ? 's' : '') + ' telle'
+            + (f.restants > 1 ? 's' : '') + ' quelle' + (f.restants > 1 ? 's' : '') + '.' : '')
         + '</span></li>';
+    }
+    html += '</ul>';
+  }
+
+  if (orphelins.length){
+    html += '<ul class="fixList"' + (renames.length ? ' style="margin-top:12px"' : '') + '>';
+    for (const f of orphelins){
+      html += '<li><div class="fixLine"><span class="del">' + esc(f.from) + '</span>'
+        + '<span class="arrow">&rarr;</span><span class="add">' + esc(f.to) + '</span>'
+        + '<span class="sub">' + f.restants + ' occurrence' + (f.restants > 1 ? 's' : '') + '</span>'
+        + '<span class="fixAmbig">a verifier</span></div>'
+        + '<span class="fixWhy"><b>' + esc(f.from) + '</b> figure dans le code, mais sur aucune '
+        + 'variable portant <b>' + esc(f.struct || f.param) + '</b> : rien n\'a ete reecrit. '
+        + 'Si l\'alimentation du parametre <b>' + esc(f.param) + '</b> se fait ailleurs '
+        + '(MOVE-CORRESPONDING, routine appelee), la conversion est a faire a la main.</span></li>';
     }
     html += '</ul>';
   }

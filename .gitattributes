@@ -1,0 +1,7 @@
+# Les fichiers sont publies tels qu'ils sont construits.
+#
+# Sans cette ligne, git convertit les fins de ligne au depot (LF) et a la
+# copie de travail (CRLF sous Windows). GitHub Pages sert alors la version
+# LF, dont l'empreinte differe de celle du fichier construit : la
+# verification proposee dans index.html.sha256 echouait a chaque fois.
+* -text

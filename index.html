@@ -1761,57 +1761,41 @@ function notesHit(a){
 /**
  * Pose le pseudo-commentaire ATC sur l'appel du module fonction.
  *
- * <p>Un seul pseudo-commentaire par ligne de programme : la documentation
- * ABAP est explicite, « pour masquer plusieurs avertissements d'une meme
- * instruction, l'instruction doit s'etendre sur plusieurs lignes ». Deux
- * <code>"#EC</code> colles bout a bout sur la meme ligne ne fonctionnent
- * pas — le second n'est que du texte a l'interieur du premier commentaire.
- * Les 21 modules que deux notes citent a la fois recevaient exactement ca.
+ * <p>Le constat porte sur une ligne precise, et le pseudo-commentaire doit y
+ * rester : c'est tout l'objet du defaut signale a abap-cleaner, ou une regle
+ * d'alignement deplacait <code>"#EC CI_USAGE_OK[...]</code> sur la ligne
+ * suivante et le rendait inoperant. Repartir les notes sur plusieurs lignes
+ * de l'instruction reviendrait au meme.
  *
- * <p>Chaque note est donc posee sur sa propre ligne de l'instruction :
- * la ligne d'ancrage d'abord (le CALL FUNCTION, ou la fin d'instruction
- * selon le reglage), puis les autres lignes de l'appel. S'il n'y a pas
- * assez de lignes, les notes restantes sont signalees plutot que perdues.
+ * <p>Quand deux notes citent le meme appel — 21 modules de l'index —, elles
+ * partagent donc la meme ligne, une correction unique et lisible d'un coup
+ * d'oeil. Aucune documentation SAP ne decrit de forme portant plusieurs
+ * numeros dans un seul crochet ; a confirmer par un passage ATC.
  */
 function addPragma(code, mod, notes){
-  if (pragmaPos === 'off' || !notes.length) return {code, applied: null, poses: [], restants: []};
+  if (pragmaPos === 'off' || !notes.length) return {code, applied: null};
 
+  const tag = notes.map(x => `"#EC ${PRAGMA_KIND[x] || 'CI_USAGE_OK'}[${x}]`).join(' ');
   const lines = code.split('\n');
   const callRe = new RegExp("CALL\\s+FUNCTION\\s+'" + escapeRegExp(mod) + "'", 'i');
 
   // Sur une ligne commentee, le pragma ne servirait a rien : le Code
   // Inspector ne lit pas les commentaires, et l'appel reel resterait nu.
   const start = lines.findIndex(l => !/^\*/.test(l) && callRe.test(atcStripComment(l).code));
-  if (start < 0) return {code, applied: null, poses: [], restants: []};
+  if (start < 0) return {code, applied: null};
 
-  // Fin de l'instruction : premiere ligne se terminant par un point.
-  let fin = start;
-  for (let i = start; i < lines.length; i++){
-    if (/\.\s*(".*)?$/.test(atcStripComment(lines[i]).code.trimEnd())){ fin = i; break; }
-    fin = i;
+  let target = start;
+  if (pragmaPos === 'end'){
+    // Fin de l'instruction : premiere ligne se terminant par un point.
+    for (let i = start; i < lines.length; i++){
+      if (/\.\s*(".*)?$/.test(atcStripComment(lines[i]).code.trimEnd())){ target = i; break; }
+      target = i;
+    }
   }
 
-  // Ordre des lignes offertes : l'ancrage choisi, puis la fin d'instruction,
-  // puis les lignes intermediaires en remontant.
-  const ancre = pragmaPos === 'end' ? fin : start;
-  const ordre = [ancre];
-  for (let i = fin; i >= start; i--) if (i !== ancre) ordre.push(i);
-  const libres = ordre.filter(i => !/^\*/.test(lines[i]) && !lines[i].includes('#EC'));
-
-  const poses = [];
-  for (const note of notes){
-    if (poses.length >= libres.length) break;
-    const ligne = libres[poses.length];
-    const tag = `"#EC ${PRAGMA_KIND[note] || 'CI_USAGE_OK'}[${note}]`;
-    lines[ligne] = lines[ligne].trimEnd() + '   ' + tag;
-    poses.push({line: ligne + 1, tag, note});
-  }
-
-  if (!poses.length) return {code, applied: null, poses: [], restants: []};
-
-  poses.sort((x, y) => x.line - y.line);
-  return {code: lines.join('\n'), applied: poses[0], poses,
-          restants: notes.slice(poses.length)};
+  if (lines[target].includes('#EC')) return {code, applied: null};   // deja pragmatise
+  lines[target] = lines[target].trimEnd() + '   ' + tag;
+  return {code: lines.join('\n'), applied: {line: target + 1, tag, notes}};
 }
 
 function buildFixBox(code, a, mod){
@@ -1955,36 +1939,24 @@ function buildFixBox(code, a, mod){
   }
 
   if (pragma.applied){
-    const plusieurs = pragma.poses.length > 1;
-    html += '<ul class="fixList" style="margin-top:12px">';
-    pragma.poses.forEach((pose, i) => {
-      html += '<li><div class="fixLine"><span class="atcNum">l.' + pose.line + '</span>'
-        + '<span class="add">' + esc(pose.tag) + '</span>'
-        + '<span class="atcRule">pragma ATC</span></div>';
-      if (i === 0){
-        html += '<span class="fixWhy">'
-          + (seulPragma
-              ? 'Aucun des parametres cites par ' + (plusieurs ? 'ces notes' : 'la note')
-                + ' n\'est passe dans cet appel : il n\'y a rien a reecrire, et le pragma est la '
-                + 'reponse complete au constat ATC sur <b>' + esc(mod) + '</b>. '
-              : 'Ajoute sur l\'appel de <b>' + esc(mod) + '</b> pour retirer le constat ATC '
-                + 'une fois le mapping verifie. ')
-          + 'A ne conserver que si l\'adaptation est reellement faite : '
-          + 'le pragma masque le controle, il ne corrige rien.</span>';
-      } else {
-        html += '<span class="fixWhy">Note ' + esc(pose.note) + ' — pose sur une autre ligne de '
-          + 'l\'instruction : le Code Inspector ne lit qu\'un pseudo-commentaire par ligne. '
-          + 'A confirmer par un passage ATC.</span>';
-      }
-      html += '</li>';
-    });
-    if (pragma.restants.length){
-      html += '<li><span class="fixWhy">L\'instruction n\'offre pas assez de lignes pour '
-        + (pragma.restants.length > 1 ? 'les notes ' : 'la note ')
-        + pragma.restants.map(esc).join(', ')
-        + ' : etalez l\'appel sur plus de lignes, un pseudo-commentaire par ligne.</span></li>';
-    }
-    html += '</ul>';
+    const plusieurs = pragma.applied.notes.length > 1;
+    html += '<ul class="fixList" style="margin-top:12px"><li>'
+      + '<div class="fixLine"><span class="atcNum">l.' + pragma.applied.line + '</span>'
+      + '<span class="add">' + esc(pragma.applied.tag) + '</span>'
+      + '<span class="atcRule">pragma ATC</span></div>'
+      + '<span class="fixWhy">'
+      + (seulPragma
+          ? 'Aucun des parametres cites par ' + (plusieurs ? 'ces notes' : 'la note')
+            + ' n\'est passe dans cet appel : il n\'y a rien a reecrire, et le pragma est la '
+            + 'reponse complete au constat ATC sur <b>' + esc(mod) + '</b>. '
+          : 'Ajoute sur l\'appel de <b>' + esc(mod) + '</b> pour retirer le constat ATC '
+            + 'une fois le mapping verifie. ')
+      + (plusieurs
+          ? 'Les ' + pragma.applied.notes.length + ' notes citent le meme appel : elles partagent '
+            + 'la ligne du constat, ou le pseudo-commentaire doit rester. '
+          : '')
+      + 'A ne conserver que si l\'adaptation est reellement faite : '
+      + 'le pragma masque le controle, il ne corrige rien.</span></li></ul>';
   }
 
   html += '</div>';

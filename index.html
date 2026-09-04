@@ -740,7 +740,7 @@ const NOTE_CATALOG = [
    manuel: "comparaisons, offsets figés à 18, MOVE-CORRESPONDING et paramètres de "
          + "CALL FUNCTION. Pour un CONCATENATE, le modèle de chaîne ne supprime le "
          + "débordement que si la cible est de type string : sinon l'affectation "
-         + "tronque toujours"},
+         + "tronque toujours, même avec une longueur renseignée"},
   // Sans numero de note : ce sont des controles de programmation robuste, pas
   // des points de simplification S/4. Ils partagent pourtant une seule cause
   // — le code s'appuie sur un ordre de lignes que HANA ne garantit plus — et
@@ -1406,6 +1406,32 @@ function matchCase(sample, replacement){
  * colonne de BSEG. Renommer le second donnait {@code accit_glx-rbukrs},
  * un composant qui n'existe pas.
  */
+/**
+ * Meme remplacement, mais hors des commentaires.
+ *
+ * <p>Une ligne commentee est du code mort ou une trace : la reecrire la
+ * denature sans rien corriger. Le cas le plus genant est l'archive de
+ * l'outil lui-meme — la ligne d'origine conservee sous le marqueur. La
+ * modifier ferait mentir le avant/apres, et c'est tout l'interet de la
+ * convention qui disparaitrait.
+ *
+ * <p>Le commentaire de fin de ligne est traite pareil : seule la part active
+ * de la ligne est reecrite.
+ */
+function replaceWholeWordCode(code, from, to, sources){
+  let count = 0;
+  const out = code.split('\n').map(ligne => {
+    if (/^\*/.test(ligne)) {
+      return ligne;                          // ligne entierement commentee
+    }
+    const coupe = atcStripComment(ligne);
+    const res = replaceWholeWord(coupe.code, from, to, sources);
+    count += res.count;
+    return res.code + coupe.comment;
+  }).join('\n');
+  return {code: out, count};
+}
+
 function replaceWholeWord(code, from, to, sources){
   if (!sources){
     const re = new RegExp('(^|[^A-Za-z0-9_/])(' + escapeRegExp(from) + ')(?![A-Za-z0-9_/])', 'gi');
@@ -1443,7 +1469,7 @@ function buildAfleFixes(code, a){
     if (!r.vHit || r.searchValue === r.value) continue;
     const key = r.searchValue.toUpperCase() + '>' + r.value.toUpperCase();
     if (seen.has(key)) continue;
-    const {count} = replaceWholeWord(code, r.searchValue, r.value);
+    const {count} = replaceWholeWordCode(code, r.searchValue, r.value);
     if (!count) continue;
     seen.add(key);
     fixes.push({from: r.searchValue, to: r.value, count, param: r.parameter});
@@ -1471,7 +1497,7 @@ function buildLongFieldFixes(code, a){
       for (const f of r.structDetail.matched){
         if (!f.longField || !f.fHit) continue;
         if (seen.has(f.field + '>' + f.longField)) continue;
-        const {count} = replaceWholeWord(code, f.field, f.longField);
+        const {count} = replaceWholeWordCode(code, f.field, f.longField);
         if (!count) continue;
         seen.add(f.field + '>' + f.longField);
         fixes.push({
@@ -1559,7 +1585,7 @@ function buildFixBox(code, a, mod){
 
   let corrected = code;
   const renames = afle.concat(longs);
-  for (const f of renames) corrected = replaceWholeWord(corrected, f.from, f.to).code;
+  for (const f of renames) corrected = replaceWholeWordCode(corrected, f.from, f.to).code;
 
   const pragma = mod ? addPragma(corrected, mod, hitNotes) : {code: corrected, applied: null};
   corrected = pragma.code;
@@ -2157,8 +2183,14 @@ function buildAcdocaRewrite(code, table, rows){
   }
 
   const applied = [], ambiguous = [];
-  let rewritten = code.replace(/\b(FROM|JOIN)(\s+)(BSEG|BKPF|COEP|FAGLFLEXA)\b/gi,
-    (m, kw, sp, tbl) => kw + sp + matchCase(tbl, 'acdoca'));
+  // Hors commentaires, comme le renommage des champs : une clause FROM
+  // commentee est du code mort, la reecrire n'aide personne.
+  let rewritten = code.split('\n').map(ligne => {
+    if (/^\*/.test(ligne)) return ligne;
+    const coupe = atcStripComment(ligne);
+    return coupe.code.replace(/\b(FROM|JOIN)(\s+)(BSEG|BKPF|COEP|FAGLFLEXA)\b/gi,
+      (m, kw, sp, tbl) => kw + sp + matchCase(tbl, 'acdoca')) + coupe.comment;
+  }).join('\n');
 
   let identical = 0;
   for (const [oldField, targets] of byOld){
@@ -2169,7 +2201,7 @@ function buildAcdocaRewrite(code, table, rows){
     if (uniq[0].toUpperCase() === oldField.toUpperCase()){ identical++; continue; }
     // BKPF partage la reecriture de BSEG : les deux nourrissent ACDOCA.
     const sources = table === 'bseg' ? ['bseg', 'bkpf'] : [table];
-    const res = replaceWholeWord(rewritten, oldField, uniq[0], sources);
+    const res = replaceWholeWordCode(rewritten, oldField, uniq[0], sources);
     if (!res.count) continue;
     rewritten = res.code;
     applied.push({oldField, to: uniq[0], count: res.count});
@@ -2851,22 +2883,20 @@ function atcApplyRules(code, targets, ctx, lengths, prefix){
           if (!champs.includes(nom)) champs.push(nom);
         }
 
-        if (coupes.length){
-          // On garde CONCATENATE : la notation champ(n) y est certainement
-          // valide, ce qui n'est pas garanti dans un modele de chaine. Et on
-          // repart des lignes d'origine, pour ne pas ecraser leur mise en
-          // forme — c'est la seule chose qui change dans l'instruction.
-          const brutes = ctx && ctx.stmts ? ctx.stmts[ctx.index].lines : [code];
-          return {rule: 'CONCATENATE (longueur d\'origine)', champs, enPlace: true,
-                  lines: atcPoserLongueurs(brutes, coupes)};
-        }
-
+        // Une seule forme de sortie, le modele de chaine. La troncature s'y
+        // ecrit avec substring( ) : la notation champ(n) n'est pas admise
+        // entre accolades, ou seule une expression generale est acceptee.
+        const parTaille = new Map(coupes);
         const morceaux = [];
         ops.forEach((o, i) => {
           if (i && sep) morceaux.push(`{ ${sep} }`);
-          morceaux.push(`{ ${o} }`);
+          const taille = parTaille.get(o);
+          morceaux.push(taille
+            ? `{ substring( val = ${o} len = ${taille} ) }`
+            : `{ ${o} }`);
         });
-        return {rule: 'CONCATENATE', champs,
+        return {rule: coupes.length ? 'CONCATENATE (longueur d\'origine)' : 'CONCATENATE',
+                champs,
                 lines: [`${m[2].trim()} = |${morceaux.join('')}|.`]};
       }
     }

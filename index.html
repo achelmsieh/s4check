@@ -1004,6 +1004,25 @@ const ABAP_STOP = new Set(['TYPE','TYPES','DATA','BEGIN','END','OF','STRUCTURE',
   'NOT','AND','OR','IS','SUPPLIED','BOUND','THEN','CASE','ENDCASE','WHEN','OTHERS'].map(s => s.toUpperCase()));
 
 /**
+ * Le code prive de ses commentaires, offsets conserves.
+ *
+ * <p>Le contenu commente est remplace par des espaces plutot que supprime :
+ * les positions restent valides, donc les liens qui surlignent une
+ * instruction dans le code colle continuent de pointer au bon endroit.
+ *
+ * <p>C'est la seule definition de « ce qui est commente » pour l'onglet
+ * Analyse. Elle vaut pour la ligne entiere commencant par etoile comme pour
+ * le commentaire de fin de ligne.
+ */
+function masquerCommentaires(code){
+  return code.split('\n').map(ligne => {
+    if (/^\*/.test(ligne)) return ' '.repeat(ligne.length);
+    const coupe = atcStripComment(ligne);
+    return coupe.code + ' '.repeat(coupe.comment.length);
+  }).join('\n');
+}
+
+/**
  * Identifiants presents dans le code, commentaires exclus.
  *
  * <p>Un appel de module fonction genere par SE37 arrive avec ses parametres
@@ -1016,17 +1035,13 @@ const ABAP_STOP = new Set(['TYPE','TYPES','DATA','BEGIN','END','OF','STRUCTURE',
 function tokenize(code){
   const out = new Set();
   const re = /[A-Za-z0-9_\/]{3,}/g;
-  for (const ligne of code.split('\n')){
-    if (/^\*/.test(ligne)) continue;                  // ligne commentee
-    const actif = atcStripComment(ligne).code;         // commentaire de fin de ligne
-    let m;
-    re.lastIndex = 0;
-    while ((m = re.exec(actif))){
-      const tok = m[0].toUpperCase();
-      if (/^[0-9\/]+$/.test(tok)) continue;
-      if (ABAP_STOP.has(tok)) continue;
-      out.add(tok);
-    }
+  const actif = masquerCommentaires(code);
+  let m;
+  while ((m = re.exec(actif))){
+    const tok = m[0].toUpperCase();
+    if (/^[0-9\/]+$/.test(tok)) continue;
+    if (ABAP_STOP.has(tok)) continue;
+    out.add(tok);
   }
   return out;
 }
@@ -1037,6 +1052,13 @@ function tokenize(code){
 function detectModulesFromCode(code){
   const found = [];
   const seen = new Set();
+
+  // Un appel entierement commente est du code mort : le retenir faisait
+  // dresser tout le bilan de la note — parametres exposes, champs a
+  // verifier, pragma a poser — pour un appel que le programme n'execute
+  // pas. Le masque vaut aussi pour la declaration FORM/FUNCTION ci-dessous.
+  code = masquerCommentaires(code);
+
   const callRe = /CALL\s+FUNCTION\s+'([A-Za-z0-9_\/]+)'/gi;
   let m;
   while ((m = callRe.exec(code))){
@@ -1049,6 +1071,23 @@ function detectModulesFromCode(code){
     if (!seen.has(name)){ seen.add(name); found.push(name); }
   }
   return found;
+}
+
+/**
+ * Les modules reellement appeles par le code colle, commentaires exclus.
+ *
+ * <p>A distinguer de {@link detectModulesFromCode}, qui retient aussi les
+ * declarations <code>FUNCTION x.</code> : dans une source SE37, l'interface
+ * du module est justement ecrite en commentaire (<code>*"  IMPORTING</code>),
+ * et le raisonnement ci-dessous n'y tiendrait pas.
+ */
+function modulesAppelesDansLeCode(code){
+  const out = new Set();
+  const re = /CALL\s+FUNCTION\s+'([A-Za-z0-9_\/]+)'/gi;
+  const actif = masquerCommentaires(code);
+  let m;
+  while ((m = re.exec(actif))) out.add(m[1].toUpperCase());
+  return out;
 }
 
 /* Un champ n'est "confirme" que si son parametre ET son data element apparaissent
@@ -1089,7 +1128,18 @@ function structFieldMatches(structName, tokens){
   return {total: fields.length, matched};
 }
 
-function moduleAnalysis(mod, tokens){
+/**
+ * Bilan d'un module pour chaque note.
+ *
+ * @param appele le code colle contient l'appel de ce module. Les parametres
+ *        d'un CALL FUNCTION y sont nommes un par un : celui qui n'y figure
+ *        pas n'est pas passe, et il n'y a rien a en dire — meme si l'un de
+ *        ses champs porte un nom repandu (material, matnr) present ailleurs
+ *        dans le code. Sans ce filtre, un parametre laisse en commentaire,
+ *        ou simplement jamais employe, se retrouvait detaille en bas de page
+ *        au meme titre que ceux qu'on passe vraiment.
+ */
+function moduleAnalysis(mod, tokens, appele){
   if (!DATA[mod]) return null;
   const out = {};
   for (const note of NOTES){
@@ -1106,6 +1156,7 @@ function moduleAnalysis(mod, tokens){
       const structDetail = structFieldMatches(r.value, tokens);
       let state = pHit && vHit ? 'full' : vHit ? 'field' : pHit ? 'param' : 'none';
       if (state === 'none' && structDetail && structDetail.matched.length) state = 'field';
+      if (appele && !pHit) state = 'none';   // parametre non passe : rien a en dire
 
       const entry = {parameter: r.parameter, value: r.value, searchValue, state, pHit, vHit,
                      structDetail, kind: r.note || '', note};
@@ -1315,6 +1366,7 @@ function jumpToToken(tok){
    qu'une verification manuelle est necessaire. */
 
 function findParamBindings(code, paramNames){
+  code = masquerCommentaires(code);
   const bindings = new Map();
   const re = /\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*\./g;
   let m;
@@ -1333,6 +1385,7 @@ function findParamBindings(code, paramNames){
 
 function findMoveCorresponding(code){
   const out = [];
+  code = masquerCommentaires(code);   // offsets conserves : les liens restent justes
   const re = /MOVE-CORRESPONDING\s+([A-Za-z_][\w<>]*)\s+TO\s+([A-Za-z_][\w<>]*)\s*\./gi;
   let m;
   while ((m = re.exec(code))){
@@ -1503,11 +1556,21 @@ const TYPE_NOTES = ["2438131", "2438006"];   // notes portant sur les types de p
    que la structure S/4 expose un champ <X>_LONG. Contrairement a l'AFLE, on
    ne se fie pas a un suffixe devine : les deux champs doivent exister dans
    la meme structure pour que la proposition soit emise. */
+/* Un meme nom de champ appartient souvent a plusieurs parametres du meme
+   module : MATERIAL figure dans les quatre structures de BAPI_PO_CREATE1.
+   La conversion est la meme, mais la justification affichee doit citer le
+   parametre qu'on passe reellement — les confirmes d'abord, et jamais un
+   parametre absent de l'appel. */
+const ORDRE_ETATS = {full: 0, field: 1, param: 2, none: 3};
+
 function buildLongFieldFixes(code, a){
   const fixes = [];
   const seen = new Set();
   for (const note of NOTES){
-    for (const r of a[note].rows){
+    const rows = a[note].rows.slice()
+      .sort((x, y) => ORDRE_ETATS[x.state] - ORDRE_ETATS[y.state]);
+    for (const r of rows){
+      if (r.state === 'none') continue;
       if (!r.structDetail) continue;
       for (const f of r.structDetail.matched){
         if (!f.longField || !f.fHit) continue;
@@ -1574,7 +1637,9 @@ function addPragma(code, mod, notes){
   const lines = code.split('\n');
   const callRe = new RegExp("CALL\\s+FUNCTION\\s+'" + escapeRegExp(mod) + "'", 'i');
 
-  let start = lines.findIndex(l => callRe.test(l));
+  // Sur une ligne commentee, le pragma ne servirait a rien : le Code
+  // Inspector ne lit pas les commentaires, et l'appel reel resterait nu.
+  let start = lines.findIndex(l => !/^\*/.test(l) && callRe.test(atcStripComment(l).code));
   if (start < 0) return {code, applied: null};
 
   let target = start;
@@ -1852,11 +1917,12 @@ function renderAnalysis(){
   }
 
   const manualMod = $mod.value.trim().toUpperCase();
+  const appeles = modulesAppelesDansLeCode(code);
 
   if (manualMod){
     updateHeaderOffset();
     if (DATA[manualMod]){
-      const a = moduleAnalysis(manualMod, tokens);
+      const a = moduleAnalysis(manualMod, tokens, appeles.has(manualMod));
       const strong = new Map(), soft = new Map();
       hitMapFromAnalysis(a, strong, soft);
       updateEditor(strong, soft);
@@ -1884,7 +1950,7 @@ function renderAnalysis(){
     const strong = new Map(), soft = new Map();
     let sections = '';
     for (const m of knownMods){
-      const a = moduleAnalysis(m, tokens);
+      const a = moduleAnalysis(m, tokens, appeles.has(m));
       hitMapFromAnalysis(a, strong, soft);
       sections += renderModuleSection(m, a, buildFixBox(code, a, m) + buildStructureWarnings(code, a));
     }
@@ -1904,7 +1970,7 @@ function renderAnalysis(){
 
   const hits = [];
   for (const m of candidateModules(tokens)){
-    const a = moduleAnalysis(m, tokens);
+    const a = moduleAnalysis(m, tokens, appeles.has(m));
     if (hasAnyHit(a)) hits.push({mod: m, a});
   }
 

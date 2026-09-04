@@ -1003,15 +1003,30 @@ const ABAP_STOP = new Set(['TYPE','TYPES','DATA','BEGIN','END','OF','STRUCTURE',
   'STRING','FUNCTION-POOL','INTERFACE','ENDINTERFACE','PUBLIC','PRIVATE','PROTECTED','SECTION','RETURNING',
   'NOT','AND','OR','IS','SUPPLIED','BOUND','THEN','CASE','ENDCASE','WHEN','OTHERS'].map(s => s.toUpperCase()));
 
+/**
+ * Identifiants presents dans le code, commentaires exclus.
+ *
+ * <p>Un appel de module fonction genere par SE37 arrive avec ses parametres
+ * optionnels en commentaire :
+ * <pre>*     TESTRUN               = ' '</pre>
+ * Les compter comme presents faisait reclamer la verification de parametres
+ * que l'appel ne passe pas — du bruit dans la proposition, et le plus genant
+ * des bruits : celui qui ressemble a du travail.
+ */
 function tokenize(code){
   const out = new Set();
   const re = /[A-Za-z0-9_\/]{3,}/g;
-  let m;
-  while ((m = re.exec(code))){
-    const tok = m[0].toUpperCase();
-    if (/^[0-9\/]+$/.test(tok)) continue;
-    if (ABAP_STOP.has(tok)) continue;
-    out.add(tok);
+  for (const ligne of code.split('\n')){
+    if (/^\*/.test(ligne)) continue;                  // ligne commentee
+    const actif = atcStripComment(ligne).code;         // commentaire de fin de ligne
+    let m;
+    re.lastIndex = 0;
+    while ((m = re.exec(actif))){
+      const tok = m[0].toUpperCase();
+      if (/^[0-9\/]+$/.test(tok)) continue;
+      if (ABAP_STOP.has(tok)) continue;
+      out.add(tok);
+    }
   }
   return out;
 }

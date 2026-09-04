@@ -13,7 +13,7 @@
     - toute redistribution, mise a disposition ou publication
     - toute reutilisation de tout ou partie du code dans un autre produit
 
-  Build : 2026-08-31
+  Build : 2026-09-03
   L'empreinte SHA-256 de la version authentique est fournie separement
   (fichier .sha256). Un exemplaire dont l'empreinte differe a ete modifie.
 
@@ -29,6 +29,9 @@
 <title>S/4 Check — analyse d'impact des notes SAP sur le code ABAP</title>
 <style>
 :root{
+  /* --brand : la teinte des etats actifs. Elle suit l'encre, ce qui donne
+     des onglets noirs sur fond clair et clairs sur fond sombre. */
+  --brand:#17171B;
   --paper:#FAF9F6; --card:#FFFFFF; --ink:#17171B; --ink-soft:#575550;
   --ink-faint:#8D8A82; --rule:#E3E0D7; --rule-soft:#EFEDE6;
   --afle:#2A4785; --afle-bg:#EDF1FA; --afle-soft:#DCE5F5;
@@ -53,9 +56,16 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);f
 header{border-bottom:1px solid var(--rule);background:var(--paper);
        position:sticky;top:0;z-index:10;transition:box-shadow .2s ease}
 header.scrolled{box-shadow:0 1px 0 var(--rule),0 8px 24px -16px rgba(23,23,27,.28)}
-.masthead{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;padding:16px 0 12px}
-h1{font-size:16px;font-weight:650;margin:0;letter-spacing:-.015em}
-.h1sub{font-weight:400;color:var(--ink-faint);letter-spacing:0}
+/* Une seule barre : le logo, puis les sections, puis les commandes. Le nom
+   et la navigation vont ensemble — c'est ce qu'on regarde en arrivant. */
+.masthead{display:flex;align-items:center;flex-wrap:wrap;gap:6px 28px;padding:12px 0;
+          border-bottom:1px solid var(--rule-soft);margin-bottom:14px}
+
+/* Logo : le nom, et la coche qui dit ce que fait l'outil. */
+.logo{display:inline-flex;align-items:center;gap:3px;margin:0;
+      font-size:23px;font-weight:800;letter-spacing:-.035em;color:var(--ink);
+      white-space:nowrap;user-select:none}
+.logo .coche{color:var(--dtyp);flex:none;margin:0 1px}
 .sub{font-size:12.5px;color:var(--ink-faint)}
 .sub b{font-weight:600;color:var(--ink-soft);font-variant-numeric:tabular-nums}
 
@@ -83,7 +93,7 @@ h1{font-size:16px;font-weight:650;margin:0;letter-spacing:-.015em}
             color:var(--ink-soft);cursor:pointer;transition:background .15s ease,color .15s ease}
 .seg button+button{border-left:1px solid var(--rule)}
 .seg button:hover:not([aria-pressed="true"]){background:var(--rule-soft);color:var(--ink)}
-.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.seg button[aria-pressed="true"]{background:var(--brand);color:var(--paper)}
 
 main{padding:22px 0 60px}
 .status{font-size:12.5px;color:var(--ink-faint);padding:0 0 14px}
@@ -136,6 +146,7 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--rule);border-b
 
 .noteBar{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding-bottom:14px;font-size:12.5px;
          position:relative}
+.noteBar .lead{white-space:nowrap}
 /* Infobulle des notes. Placee hors du groupe de boutons, qui masque ce qui
    deborde pour garder ses coins arrondis. */
 .noteTip{position:absolute;top:100%;left:0;z-index:20;max-width:460px;
@@ -154,12 +165,16 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--rule);border-b
 .noteBar .seg button[data-idle]{opacity:.45}
 .noteBar .seg button[data-idle]:hover{opacity:1}
 .noteBar .tail{color:var(--ink-faint);margin-left:2px}
-.tabs{display:flex;gap:6px;padding-bottom:14px}
-.tabs button{font-family:var(--sans);font-size:13px;font-weight:500;padding:6px 15px;border:1px solid var(--rule);
-             background:var(--card);color:var(--ink-soft);border-radius:99px;cursor:pointer;
-             box-shadow:var(--shadow-sm);transition:background .15s ease,color .15s ease,border-color .15s ease}
-.tabs button:hover:not([aria-pressed="true"]){border-color:#CFCBC0;color:var(--ink)}
-.tabs button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+/* Sections : du texte, pas des boutons. Un trait sous la section ouverte
+   suffit a la designer, et la barre reste lisible d'un coup d'oeil. */
+.tabs{display:flex;flex-wrap:wrap;align-items:center;gap:4px 26px}
+.tabs button{font-family:var(--sans);font-size:12.5px;font-weight:600;
+             letter-spacing:.055em;text-transform:uppercase;
+             padding:6px 0;border:0;background:none;color:var(--ink-soft);cursor:pointer;
+             border-bottom:2px solid transparent;
+             transition:color .15s ease,border-color .15s ease}
+.tabs button:hover:not([aria-pressed="true"]){color:var(--ink)}
+.tabs button[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--ink)}
 
 .analyzerow{display:flex;gap:10px;padding-bottom:10px}
 #modInput{flex:1;min-width:0;font-family:var(--mono);font-size:13.5px;padding:9px 12px;border:1px solid var(--rule);
@@ -247,6 +262,30 @@ mark.partial-2438006{background:transparent;color:var(--fmod);text-decoration:un
 .atcNum{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
 
 .atcPick{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+/* Saisie des longueurs d'origine, adossee a sa conversion. */
+.longueurs{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin-top:8px;
+           padding:8px 10px;border-left:2px solid var(--warn);background:var(--warn-bg);
+           border-radius:0 6px 6px 0;font-size:11.5px}
+.longueurs .quoi{font-weight:600;color:var(--ink)}
+.longueurs .lg{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px}
+.longueurs .lg input{width:52px;font-family:var(--mono);font-size:11px;padding:2px 5px;
+                     border:1px solid var(--rule);border-radius:4px;background:var(--card);
+                     color:var(--ink)}
+.longueurs .pourquoi{flex-basis:100%;color:var(--ink-soft);font-size:11px;line-height:1.5}
+.longueurs .propose{font-family:var(--mono);font-size:10.5px;padding:1px 6px;cursor:pointer;
+                    border:1px solid var(--warn-border);border-radius:99px;
+                    background:var(--card);color:var(--warn)}
+.longueurs .propose:hover{background:var(--warn);color:#FFFFFF;border-color:var(--warn)}
+/* Complement : ce qu'il faut ajouter ailleurs pour que la correction tienne. */
+.complement{margin-top:8px;padding:9px 11px;border:1px solid var(--fix-border);
+            border-radius:6px;background:var(--fix-bg)}
+.cplHead{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.cplTitre{font-weight:650;font-size:11.5px;color:var(--fix)}
+.cplHead .btn{margin-left:auto;font-size:11px;padding:2px 9px}
+.cplCreer{display:block;font-size:11px;color:var(--ink-soft);line-height:1.5;margin-bottom:6px}
+.cplCode{margin:0;padding:8px 10px;border-radius:5px;background:var(--card);
+         border:1px solid var(--rule-soft);font-family:var(--mono);font-size:11px;
+         line-height:1.5;white-space:pre;overflow-x:auto;color:var(--ink)}
 .opt{display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;color:var(--ink-soft)}
 .opt input{margin:0}
 /* En-tete de groupe dans les resultats : meme grammaire que .note-head de
@@ -359,12 +398,12 @@ table.structTable td.p{color:var(--afle)}
   .analyzerow{flex-direction:column}
   .wrap{padding:0 16px}
   .filters input.wide{width:100%;max-width:none}
-  .h1sub{display:none}
 }
 
 /* Theme sombre. Le mode "auto" est resolu en JS vers light/dark, ce qui evite
    de dupliquer ce bloc entre media query et choix explicite. */
 html[data-theme="dark"]{
+    --brand:#ECEAE4;
     --paper:#16161A; --card:#1D1D22; --ink:#ECEAE4; --ink-soft:#A8A49B;
     --ink-faint:#7A776F; --rule:#33333A; --rule-soft:#292930;
     --afle:#9CB6EC; --afle-bg:#1E2740; --afle-soft:#2C3A5C;
@@ -399,8 +438,22 @@ html[data-theme="dark"] .fixPre{background:#191920}
 <header>
   <div class="wrap">
     <div class="masthead">
-      <h1>S/4&nbsp;Check <span class="h1sub">— analyse d'impact des notes SAP</span></h1>
-      <span class="sub"><b>2 278</b> modules fonction · <b>1 063</b> AFLE · <b>1 257</b> datatypes · <b>3 181</b> n° article · <b>500</b> champs ACDOCA · <b>748</b> structures</span>
+      <h1 class="logo">
+        <span class="mot">S/4</span><svg class="coche" viewBox="0 0 24 24" width="21" height="21"
+             aria-hidden="true" focusable="false"><path d="M3.5 13 L9 18.5 L20.5 5.5"
+             fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round"
+             stroke-linejoin="round"/></svg><span class="mot">Check</span>
+      </h1>
+
+<!-- Les deux onglets qui corrigent du code viennent en tete : c'est ce
+           qu'on ouvre le plus souvent. La recherche et l'analyse servent a
+           documenter, elles suivent. -->
+      <nav class="tabs" id="tabs" aria-label="Sections">
+        <button data-v="atc" aria-pressed="true">Conversion ATC</button>
+        <button data-v="acdoca" aria-pressed="false">SELECT → ACDOCA</button>
+        <button data-v="search" aria-pressed="false">Recherche</button>
+        <button data-v="analyze" aria-pressed="false">Analyse de code</button>
+      </nav>
       <a class="btn retour" id="retour" href="https://docs.google.com/forms/d/e/1FAIpQLSd_m2orfM2seVfbK7OfSErbYdOIb6A0Sz9Ipohe488dGba03w/viewform" target="_blank"
          rel="noopener noreferrer" hidden>Signaler un problème</a>
       <div class="seg themeSeg" id="themeSeg" role="group" aria-label="Thème">
@@ -410,16 +463,9 @@ html[data-theme="dark"] .fixPre{background:#191920}
       </div>
     </div>
 
-    <div class="tabs" id="tabs">
-      <button data-v="search" aria-pressed="true">Recherche</button>
-      <button data-v="analyze" aria-pressed="false">Analyse de code</button>
-      <button data-v="acdoca" aria-pressed="false">SELECT → ACDOCA</button>
-      <button data-v="atc" aria-pressed="false">Conversion ATC</button>
-    </div>
-
     <div class="noteBar" id="noteBar"></div>
 
-    <div id="searchControls">
+    <div id="searchControls" hidden>
       <div class="searchrow">
         <input id="q" type="search" autocomplete="off" spellcheck="false"
                placeholder="BAPI_ACC_BILLING_POST" aria-label="Rechercher">
@@ -483,8 +529,10 @@ html[data-theme="dark"] .fixPre{background:#191920}
       <div id="acHint"></div>
     </div>
 
-    <div id="atcControls" hidden>
-      <div class="filters">
+<!-- Marqueur, initiales et date signent les lignes reecrites, en ATC comme
+         en ACDOCA. Un seul jeu de champs : deux auraient fini par diverger. -->
+    <div id="signControls">
+      <div class="filters" style="padding-bottom:10px">
         <div class="grp">
           <span>Marqueur</span>
           <input id="atcMarker" class="mini" type="text" value="COD001" spellcheck="false" aria-label="Marqueur">
@@ -497,11 +545,21 @@ html[data-theme="dark"] .fixPre{background:#191920}
           <span>Date</span>
           <input id="atcDate" class="mini" type="date" aria-label="Date">
         </div>
+      </div>
+    </div>
+
+    <div id="atcControls">
+      <div class="filters">
         <div class="grp">
           <span>Cibler</span>
           <input id="atcTarget" class="wide" type="text" spellcheck="false" autocomplete="off"
                  placeholder="ex. WRBTR, refe — vide = aucune affectation simple touchée"
                  aria-label="Champs cibles">
+        </div>
+        <div class="grp">
+          <span>Préfixe Z</span>
+          <input id="atcPrefix" class="mini" type="text" value="ZFI" spellcheck="false"
+                 aria-label="Préfixe des objets Z">
         </div>
         <div class="grp">
           <label class="opt"><input type="checkbox" id="atcAlpha" checked>
@@ -514,7 +572,7 @@ html[data-theme="dark"] .fixPre{background:#191920}
 </header>
 
 <main class="wrap">
-  <div id="panel-search">
+  <div id="panel-search" hidden>
     <div class="status" id="status"></div>
     <div id="results"></div>
   </div>
@@ -559,7 +617,7 @@ html[data-theme="dark"] .fixPre{background:#191920}
       </div>
     </div>
   </div>
-  <div id="panel-atc" hidden>
+  <div id="panel-atc">
     <div class="analyzeGrid">
       <div class="analyzeLeft">
         <div class="editor plain" id="atcEditor">
@@ -582,9 +640,8 @@ html[data-theme="dark"] .fixPre{background:#191920}
 
 <footer class="wrap">
   <kbd>/</kbd> pour chercher · <kbd>Échap</kbd> pour effacer · recherche insensible à la casse, sous-chaîne.
-  Page autonome, aucune connexion réseau requise.
   <div class="legal">
-    © 2026 Codilog — build 2026-08-31.
+    © 2026 Codilog — build 2026-09-03.
     Usage interne réservé à Codilog. Modification, redistribution et
     réutilisation soumises à autorisation écrite de Codilog.
   </div>
@@ -663,6 +720,15 @@ const NOTE_CATALOG = [
        + "manipulaient sur l’ancienne longueur doivent être réécrites.",
    couvre: "MOVE, ADD / SUBTRACT (formes chaînées comprises), WRITE ... TO avec ou "
          + "sans CURRENCY, WRITE: chaîné, affectations et calculs vers les champs ciblés"},
+  {id: "1804812", note: "1804812", domain: "atc",    cls: "dtyp",
+   label: "Transactions MB remplacées par MIGO",
+   aide: "Les transactions de mouvement de marchandises — MB01, MB03, MB1A, MB31, "
+       + "MBST… — ne sont plus maintenues depuis la 4.6 et sont remplacées par MIGO. "
+       + "Les appels doivent passer par le module fonction MIGO_DIALOG.",
+   couvre: "MB03, MBST et MBRL, dont l’action et le document de référence MIGO sont "
+         + "établis",
+   manuel: "les autres transactions MB : leur couple action / document de référence "
+         + "dépend du mouvement, et se choisit au cas par cas"},
   {id: "2215424", note: "2215424", domain: "atc",    cls: "fmod",
    label: "Extension du n° article à 40 caractères",
    aide: "Le numéro d’article passe de 18 à 40 caractères. C’est tout le traitement "
@@ -923,8 +989,9 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && document.activeElement === $q){ $q.value = ''; compute(); }
 });
 
+// L'onglet Recherche n'est pas celui d'ouverture, mais son inventaire doit
+// etre pret : le calcul est immediat et evite un temps mort au premier clic.
 compute();
-$q.focus();
 
 /* ---- Analyse de code ABAP ---- */
 
@@ -1325,10 +1392,47 @@ function matchCase(sample, replacement){
   return replacement;
 }
 
-function replaceWholeWord(code, from, to){
-  const re = new RegExp('(^|[^A-Za-z0-9_/])(' + escapeRegExp(from) + ')(?![A-Za-z0-9_/])', 'gi');
+/**
+ * Remplace un identifiant, mot entier.
+ *
+ * @param sources noms de tables dont les colonnes sont concernees. Fourni,
+ *        le remplacement devient strict : un composant de structure n'est
+ *        renomme que si son prefixe est l'une de ces tables. Sans lui, tout
+ *        « X-champ » est renomme — ce qu'il faut pour les zones de travail
+ *        d'une BAPI, ou c'est bien le composant que l'on adapte.
+ *
+ * <p>Ce parametre repare un degat concret cote ACDOCA : dans
+ * {@code WHERE bukrs = accit_glx-bukrs}, seul le premier BUKRS est une
+ * colonne de BSEG. Renommer le second donnait {@code accit_glx-rbukrs},
+ * un composant qui n'existe pas.
+ */
+function replaceWholeWord(code, from, to, sources){
+  if (!sources){
+    const re = new RegExp('(^|[^A-Za-z0-9_/])(' + escapeRegExp(from) + ')(?![A-Za-z0-9_/])', 'gi');
+    let count = 0;
+    const out = code.replace(re, (m, pre, hit) => { count++; return pre + matchCase(hit, to); });
+    return {code: out, count};
+  }
+
+  // Le prefixe est capture a part : « - » et « ~ » sont sortis de la classe
+  // qui precede, pour qu'un acces a un composant passe toujours par lui.
+  // En ABAP le tiret d'une soustraction est entoure d'espaces, il n'y a donc
+  // pas d'ambiguite.
+  const re = new RegExp(
+    '(^|[^A-Za-z0-9_/<>~-])(([A-Za-z0-9_/<>]+)([-~]))?(' + escapeRegExp(from) + ')(?![A-Za-z0-9_/])',
+    'gi');
   let count = 0;
-  const out = code.replace(re, (m, pre, hit) => { count++; return pre + matchCase(hit, to); });
+  const out = code.replace(re, (tout, avant, prefixe, nom, sep, champ) => {
+    if (prefixe){
+      if (!sources.includes((nom || '').toLowerCase())) {
+        return tout;                      // composant d'une autre structure
+      }
+      count++;
+      return avant + matchCase(nom, 'acdoca') + sep + matchCase(champ, to);
+    }
+    count++;
+    return avant + matchCase(champ, to);
+  });
   return {code: out, count};
 }
 
@@ -2063,7 +2167,9 @@ function buildAcdocaRewrite(code, table, rows){
     // Meme nom des deux cotes (BELNR, GJAHR...) : rien a reecrire, on se
     // contente de les compter pour ne pas polluer la liste des changements.
     if (uniq[0].toUpperCase() === oldField.toUpperCase()){ identical++; continue; }
-    const res = replaceWholeWord(rewritten, oldField, uniq[0]);
+    // BKPF partage la reecriture de BSEG : les deux nourrissent ACDOCA.
+    const sources = table === 'bseg' ? ['bseg', 'bkpf'] : [table];
+    const res = replaceWholeWord(rewritten, oldField, uniq[0], sources);
     if (!res.count) continue;
     rewritten = res.code;
     applied.push({oldField, to: uniq[0], count: res.count});
@@ -2114,8 +2220,14 @@ function buildAcdocaRewrite(code, table, rows){
     });
   }
 
+  // Signature : meme convention que l'onglet Conversion ATC, et seules les
+  // lignes reellement modifiees sont commentees. Le nombre de lignes ne
+  // change pas — la reecriture est un remplacement de mots — donc la
+  // comparaison une a une suffit.
+  const signe = signerLignes(code, rewritten, atcOptions());
+
   const id = 'acfix' + (++fixSeq);
-  PENDING_FIX.set(id, rewritten);
+  PENDING_FIX.set(id, signe);
 
   let html = '<div class="fixBox"><div class="fixHead">'
     + '<p class="fixTitle">SELECT reecrit vers ACDOCA</p>'
@@ -2146,8 +2258,34 @@ function buildAcdocaRewrite(code, table, rows){
       + ' porte' + (identical > 1 ? 'nt' : '') + ' le meme nom dans ACDOCA — aucune reecriture necessaire.</span></li>';
   }
   html += '</ul>';
-  html += '<pre class="fixPre">' + esc(rewritten) + '</pre></div>';
+  html += '<pre class="fixPre">' + esc(signe) + '</pre></div>';
   return html;
+}
+
+/**
+ * Commente les lignes changees et signe les nouvelles.
+ *
+ * <p>Partage entre les onglets qui reecrivent : la convention de l'equipe
+ * doit s'appliquer partout de la meme facon, sinon une relecture ne sait
+ * plus d'ou vient une ligne.
+ */
+function signerLignes(original, reecrit, opts){
+  const avant = original.split('\n');
+  const apres = reecrit.split('\n');
+  const stamp = `${opts.author || 'AEH'}_${opts.date}_ATC`;
+  const tagOld = `"${opts.marker || 'COD001'}- ${stamp}`;
+  const tagNew = `"${opts.marker || 'COD001'}+ ${stamp}`;
+
+  const out = [];
+  for (let i = 0; i < apres.length; i++){
+    if (avant[i] === apres[i]){
+      out.push(apres[i]);
+      continue;
+    }
+    out.push('*' + (avant[i] || '').trimEnd() + ' ' + tagOld);
+    out.push(apres[i].trimEnd() + ' ' + tagNew);
+  }
+  return out.join('\n');
 }
 
 $acdocaResults.addEventListener('click', e => {
@@ -2403,6 +2541,10 @@ const ATC_RULE_NOTE = {
   "MATNR (18)": "2215424",
   "MESSAGE ... WITH": "2215424",
   "CONCATENATE": "2215424",
+  "CONCATENATE (longueur d'origine)": "2215424",
+  "CALL FUNCTION (parametre)": "2215424",
+  "TRANSFER (format ECC)": "2610650",
+  "CALL TRANSACTION MB -> MIGO": "1804812",
   "SELECT sans ORDER BY": "ORDRE",
   "DELETE ADJACENT DUPLICATES sans tri": "ORDRE",
   "LOOP AT ... AT sans tri": "ORDRE",
@@ -2435,7 +2577,7 @@ function atcAlphaOf(src){
 }
 
 /* --- Les regles, dans l'ordre de priorite --- */
-function atcApplyRules(code, targets, ctx){
+function atcApplyRules(code, targets, ctx, lengths, prefix){
   // 1. WRITE: chaine (plusieurs "src TO dst" separes par des virgules)
   let m = /^WRITE\s*:\s*(.+)\.$/i.exec(code);
   if (m && /\sTO\s/i.test(m[1])){
@@ -2495,7 +2637,171 @@ function atcApplyRules(code, targets, ctx){
     if (fixed !== code) return {rule: 'MATNR (18)', lines: [fixed]};
   }
 
-  // 7. CONCATENATE -> modele de chaine.
+  // 7. Transactions MB : appel a remplacer par MIGO_DIALOG.
+  //
+  //    Seules les trois dont l'action et le document de reference sont
+  //    etablis sont converties. Pour les autres, le couple depend du
+  //    mouvement — proposer un code plausible ferait comptabiliser un
+  //    mouvement de stock qui n'est pas celui d'origine, et c'est une erreur
+  //    qui ne se voit pas a la relecture.
+  m = /^CALL\s+TRANSACTION\s+'(MB[0-9A-Z]{1,3})'/i.exec(code);
+  if (m){
+    const tcode = m[1].toUpperCase();
+    const MIGO = {
+      MB03: {action: 'A04', refdoc: 'R02', quoi: 'afficher un document article'},
+      MBST: {action: 'A03', refdoc: 'R02', quoi: 'annuler un document article'},
+      MBRL: {action: 'A02', refdoc: 'R02', quoi: 'retour de livraison sur document article'}
+    };
+    const cible = MIGO[tcode];
+    if (cible){
+      // La cle du document vient du code alentour. Un EXPORT ... TO MEMORY
+      // precede souvent l'appel : sa derniere structure est celle que la
+      // transaction lisait.
+      let source = 'xmseg';
+      if (ctx && ctx.stmts){
+        for (let i = ctx.index - 1; i >= 0 && i >= ctx.index - 6; i--){
+          const prec = ctx.stmts[i];
+          if (prec.kind === 'raw') continue;
+          const e = /^EXPORT\s+(.+?)\s+TO\s+MEMORY\b/i.exec(atcStmtCode(prec));
+          if (e){
+            const noms = e[1].trim().split(/\s+/);
+            source = noms[noms.length - 1].toLowerCase();
+          }
+          break;
+        }
+      }
+
+      return {rule: 'CALL TRANSACTION MB -> MIGO',
+              lines: [
+                "CALL FUNCTION 'MIGO_DIALOG'",
+                '  EXPORTING',
+                "    i_action            = '" + cible.action + "'",
+                "    i_refdoc            = '" + cible.refdoc + "'",
+                "    i_notree            = 'X'",
+                "    i_skip_first_screen = 'X'",
+                '    i_mblnr             = ' + source + '-mblnr',
+                '    i_mjahr             = ' + source + '-mjahr',
+                '  EXCEPTIONS',
+                '    illegal_combination = 1',
+                '    OTHERS              = 2.'
+              ],
+              complement: {
+                titre: tcode + ' → MIGO : ' + cible.quoi,
+                aCreer: 'Action ' + cible.action + ', document de référence '
+                      + cible.refdoc + '. La clé du document est reprise de ' + source
+                      + ' — vérifiez que c’est bien la structure alimentée à cet endroit, '
+                      + 'et retirez l’EXPORT ... TO MEMORY qui précédait : MIGO_DIALOG '
+                      + 'reçoit la clé directement.',
+                code: "* EXPORT xmkpf " + source + " TO MEMORY ID list-mblnr.   \" a retirer"
+              }};
+    }
+  }
+
+  // 8. TRANSFER : le fichier de sortie doit garder son format ECC.
+  //
+  //    Sur un enregistrement de longueur fixe, un champ montant elargi
+  //    decale toutes les colonnes suivantes. Si le fichier alimente une
+  //    interface entrante, le format d'origine doit etre respecte au
+  //    caractere pres.
+  //
+  //    La correction ne tient pas dans la ligne : il faut une structure
+  //    miroir aux longueurs ECC et un module de conversion. L'outil reecrit
+  //    l'appel et fournit la routine a coller ; les deux objets du
+  //    referentiel restent a creer.
+  m = /^TRANSFER\s+([\w<>\-]+)\s+TO\s+([\w<>\-]+)\s*\.$/i.exec(code);
+  if (m && targets.length && !/\bLENGTH\b|\bNO\s+END\s+OF\s+LINE\b/i.test(code)){
+    const structure = m[1];
+    const fichier = m[2];
+    const vise = targets.some(t => structure.toUpperCase().includes(t));
+    if (vise){
+      const z = prefix || 'ZFI';
+      const nom = structure.replace(/^.*-/, '').toUpperCase();
+      const routine = ('transfer_' + structure + '_to_' + fichier)
+                        .toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      const cible = z + '_' + nom + '_ECC';
+      const module = z + '_CONVERT_' + nom + '_TO_' + nom + '_ECC';
+
+      return {rule: 'TRANSFER (format ECC)',
+              lines: [`PERFORM ${routine} USING ${structure}.`],
+              complement: {
+                titre: 'Routine à ajouter en fin de programme',
+                aCreer: 'Structure ' + cible + ' (longueurs ECC) et module fonction '
+                      + module + ', à créer dans le référentiel.',
+                code: [
+                  'FORM ' + routine,
+                  '  USING pi_' + nom.toLowerCase() + ' TYPE ' + nom.toLowerCase() + '.',
+                  '',
+                  '  DATA lo_ecc TYPE ' + cible.toLowerCase() + '.',
+                  '',
+                  "  CALL FUNCTION '" + module + "'",
+                  '    EXPORTING',
+                  '      i_' + nom.toLowerCase() + '_hana = pi_' + nom.toLowerCase(),
+                  '    IMPORTING',
+                  '      o_' + nom.toLowerCase() + '_ecc  = lo_ecc',
+                  '    EXCEPTIONS',
+                  '      x_missing_parameter        = 1',
+                  '      OTHERS                     = 2.',
+                  '  IF sy-subrc = 0.',
+                  '    TRANSFER lo_ecc TO ' + fichier + '.'
+                    + '          "#EC CI_FLDEXT_OK[2610650]',
+                  '  ENDIF.',
+                  '',
+                  'ENDFORM.'
+                ].join('\n')
+              }};
+    }
+  }
+
+  // 9. Parametres de CALL FUNCTION : conflit de type sur une interface.
+  //
+  //    Le controle « S/4HANA: Field Length Extensions », message
+  //    « Type-Conflict », signale un parametre dont le domaine s'est elargi —
+  //    par exemple CUOBN passe de C(50) a C(90). CONV est admis directement
+  //    en position de parametre depuis la 7.40, le type attendu y etant
+  //    connu : « objek = CONV #( lc_objek ) ».
+  //
+  //    Seule la section EXPORTING est traitee. IMPORTING et CHANGING recoivent
+  //    une valeur, on ne convertit pas une cible ; TABLES passe des tables
+  //    internes ; EXCEPTIONS ne contient que des numeros, et les convertir
+  //    aurait casse le traitement d'erreur.
+  if (targets.length && /^CALL\s+FUNCTION\s+'/i.test(code) && ctx && ctx.stmts){
+    const brutes = ctx.stmts[ctx.index].lines;
+    let dansExporting = false;
+    let touche = false;
+    let champConverti = '';
+
+    const sorties = brutes.map(ligne => {
+      if (/^\*/.test(ligne)) return ligne;              // ligne commentee
+      if (/\bEXPORTING\b/i.test(ligne)) dansExporting = true;
+      else if (/\b(IMPORTING|CHANGING|TABLES|EXCEPTIONS)\b/i.test(ligne)) dansExporting = false;
+      if (!dansExporting) return ligne;
+
+      // « nom = valeur », le point final eventuel mis de cote.
+      const m2 = /^(\s*)([A-Za-z_]\w*)(\s*=\s*)([^.]+?)(\s*\.?\s*)$/.exec(ligne);
+      if (!m2) return ligne;
+      const [, blanc, nom, egal, valeur, fin] = m2;
+      if (!valeur.trim() || /^CONV\b/i.test(valeur.trim())) return ligne;
+
+      const vise = targets.some(t => nom.toUpperCase().includes(t)
+                                  || valeur.toUpperCase().includes(t));
+      if (!vise) return ligne;
+      touche = true;
+      if (!champConverti) champConverti = nom + ' ' + valeur;
+      return blanc + nom + egal + 'CONV #( ' + valeur.trim() + ' )' + fin;
+    });
+
+    if (touche){
+      // Un champ montant releve de 2610650, un champ caractere de 2215424 :
+      // c'est le nom qui tranche, faute du constat ATC dans la page.
+      const montant = /\b(wrbtr|dmbtr|netwr|kbetr|betrg|skonto|hslvt|tslvt)\b/i
+                        .test(champConverti);
+      return {rule: 'CALL FUNCTION (parametre)', enPlace: true,
+              note: montant ? '2610650' : '2215424',
+              lines: sorties};
+    }
+  }
+
+  // 10. CONCATENATE -> modele de chaine.
   //    Un champ elargi fait deborder la cible : le resultat est tronque en
   //    silence. Le modele de chaine est la forme moderne, et son
   //    comportement est identique ici — pour un champ de type C, CONCATENATE
@@ -2516,20 +2822,56 @@ function atcApplyRules(code, targets, ctx){
       const ops = atcSplitTop(m[1], ' ');
       const litteralAvecBlanc = ops.some(o => /^'.*\s'$/.test(o));
       const vise = ops.some(o => targets.some(t => o.toUpperCase().includes(t)));
-      if (ops.length > 1 && vise && !litteralAvecBlanc){
+      // Un operande deja ramene a une longueur : la ligne a ete traitee, on
+      // n'y revient pas. La passer en modele de chaine y transporterait la
+      // notation champ(n), dont la validite entre accolades n'est pas
+      // garantie.
+      const dejaCoupe = ops.some(o => /\(\d+\)\s*$/.test(o));
+      if (ops.length > 1 && vise && !litteralAvecBlanc && !dejaCoupe){
         const sep = m[3] ? m[3].trim() : '';
+
+        // Un champ dont la longueur d'origine est declaree se ramene a cette
+        // taille. C'est la seule facon de supprimer le debordement quand la
+        // cible reste de longueur fixe — et c'est une perte de donnees
+        // assumee, d'ou une longueur qu'il faut saisir plutot que deviner.
+        const coupes = [];
+        for (const o of ops){
+          if (/^'/.test(o) || /\(\d+\)\s*$/.test(o)) continue;   // litteral, ou deja coupe
+          const taille = lengths && lengths[atcNomChamp(o)];
+          if (taille) coupes.push([o, taille]);
+        }
+
+        // Champs sur lesquels une longueur d'origine peut se saisir : les
+        // operandes qui designent une donnee, littéraux exclus.
+        const champs = [];
+        for (const o of ops){
+          if (/^'/.test(o)) continue;
+          const nom = atcNomChamp(o);
+          if (!champs.includes(nom)) champs.push(nom);
+        }
+
+        if (coupes.length){
+          // On garde CONCATENATE : la notation champ(n) y est certainement
+          // valide, ce qui n'est pas garanti dans un modele de chaine. Et on
+          // repart des lignes d'origine, pour ne pas ecraser leur mise en
+          // forme — c'est la seule chose qui change dans l'instruction.
+          const brutes = ctx && ctx.stmts ? ctx.stmts[ctx.index].lines : [code];
+          return {rule: 'CONCATENATE (longueur d\'origine)', champs, enPlace: true,
+                  lines: atcPoserLongueurs(brutes, coupes)};
+        }
+
         const morceaux = [];
         ops.forEach((o, i) => {
           if (i && sep) morceaux.push(`{ ${sep} }`);
           morceaux.push(`{ ${o} }`);
         });
-        return {rule: 'CONCATENATE',
+        return {rule: 'CONCATENATE', champs,
                 lines: [`${m[2].trim()} = |${morceaux.join('')}|.`]};
       }
     }
   }
 
-  // 8. MESSAGE ... WITH : conflit de longueur sur un champ passe au message.
+  // 11. MESSAGE ... WITH : conflit de longueur sur un champ passe au message.
   //    Les variables d'un MESSAGE sont typees SYST_MSGV (50 caracteres) : un
   //    champ elargi y est tronque. On passe par une variable intermediaire
   //    typee, seule facon de rendre la conversion explicite — CONV #( ) seul
@@ -2564,7 +2906,7 @@ function atcApplyRules(code, targets, ctx){
     }
   }
 
-  // 9. Affectation / calcul vers un champ cible -> CONV #( ... )
+  // 12. Affectation / calcul vers un champ cible -> CONV #( ... )
   //    Uniquement si l'utilisateur a designe des champs : sans cela on
   //    modifierait des lignes non demandees.
   if (targets.length){
@@ -2583,7 +2925,7 @@ function atcApplyRules(code, targets, ctx){
     }
   }
 
-  // 10. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.
+  // 13. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.
   //    Sur les tables pool/cluster devenues transparentes, l'interface base
   //    de donnees n'ajoute plus le tri implicite par cle primaire : on le
   //    remet explicitement.
@@ -2610,7 +2952,7 @@ function atcApplyRules(code, targets, ctx){
             lines: [code.replace(/\s*\.$/, ' ORDER BY PRIMARY KEY.')]};
   }
 
-  // 11. DELETE ADJACENT DUPLICATES sans tri prealable.
+  // 14. DELETE ADJACENT DUPLICATES sans tri prealable.
   //     Le tri doit reprendre exactement les champs du COMPARING, dans le
   //     meme ordre : c'est cette correspondance qui rend le resultat sur.
   //     Sans COMPARING, la comparaison porte sur la cle entiere, et un SORT
@@ -2624,7 +2966,7 @@ function atcApplyRules(code, targets, ctx){
     return {rule: 'DELETE ADJACENT DUPLICATES sans tri', lines: [tri, code]};
   }
 
-  // 12. Boucle avec rupture de controle sur une table non triee.
+  // 15. Boucle avec rupture de controle sur une table non triee.
   //     AT NEW et AT END OF supposent les lignes rangees par les champs de
   //     rupture : sinon les ruptures se declenchent plusieurs fois par valeur.
   m = /^LOOP\s+AT\s+([\w<>\-]+)\b/i.exec(code);
@@ -2636,7 +2978,7 @@ function atcApplyRules(code, targets, ctx){
     }
   }
 
-  // 13. READ ... BINARY SEARCH sur une table non triee.
+  // 16. READ ... BINARY SEARCH sur une table non triee.
   //     Volontairement limitee au niveau superieur : ce READ se trouve le
   //     plus souvent dans une boucle, et y poser un SORT trierait a chaque
   //     tour. La correction est alors structurelle — trier une fois avant la
@@ -2687,7 +3029,7 @@ function atcConvert(code, opts, disabled){
     if (fermante && profondeur > 0) profondeur--;
 
     const ctx = {stmts, index, dansBoucle: profondeur > 0};
-    const res = atcApplyRules(stmtCode, opts.targets, ctx);
+    const res = atcApplyRules(stmtCode, opts.targets, ctx, opts.lengths, opts.prefix);
     if (ouvrante) profondeur++;
     // Une note decochee laisse l'instruction totalement intacte : elle n'est
     // ni convertie, ni meme listee. Decocher une note, c'est la sortir du
@@ -2704,12 +3046,41 @@ function atcConvert(code, opts, disabled){
     if (off.has(key)){
       out.push(...stmt.lines);
       changes.push({key, applied: false, line: stmt.start + 1, rule: res.rule, note,
+                    champs: res.champs || null,
+                    complement: res.complement || null,
                     before: stmt.lines.map(l => l.trim()).join(' '),
                     after: res.lines.join(' ')});
       continue;
     }
 
     const indent = (stmt.lines[0].match(/^\s*/) || [''])[0];
+
+    // Reecriture sur place : la regle a repris les lignes du source et n'en a
+    // change que quelques-unes. Commenter l'instruction entiere noierait la
+    // correction — un appel de module fonction fait douze lignes pour un seul
+    // parametre converti. On ne signe donc que ce qui a bouge.
+    if (res.enPlace && res.lines.length === stmt.lines.length){
+      for (let i = 0; i < stmt.lines.length; i++){
+        if (stmt.lines[i] === res.lines[i]){
+          out.push(stmt.lines[i]);
+          continue;
+        }
+        out.push('*' + stmt.lines[i].trimEnd() + ' ' + tagOld);
+        out.push(res.lines[i].trimEnd() + ' ' + tagNew);
+      }
+      changes.push({
+        key,
+        applied: true,
+        line: stmt.start + 1,
+        rule: res.rule,
+        note,
+        champs: res.champs || null,
+        before: stmt.lines.filter((l, i) => l !== res.lines[i]).map(l => l.trim()).join(' '),
+        after: res.lines.filter((l, i) => l !== stmt.lines[i]).map(l => l.trim()).join(' ')
+      });
+      continue;
+    }
+
     const multi = stmt.lines.length > 1 || res.lines.length > 1;
 
     if (multi){
@@ -2730,6 +3101,8 @@ function atcConvert(code, opts, disabled){
       line: stmt.start + 1,
       rule: res.rule,
       note,
+      champs: res.champs || null,
+      complement: res.complement || null,
       before: stmt.lines.map(l => l.trim()).join(' '),
       after: res.lines.join(' ')
     });
@@ -2750,6 +3123,7 @@ const $atcMarker = document.getElementById('atcMarker');
 const $atcAuthor = document.getElementById('atcAuthor');
 const $atcDate = document.getElementById('atcDate');
 const $atcTarget = document.getElementById('atcTarget');
+const $atcPrefix = document.getElementById('atcPrefix');
 const $atcResizer = document.getElementById('atcResizer');
 
 $atcDate.value = new Date().toISOString().slice(0, 10);
@@ -2758,12 +3132,109 @@ $atcDate.value = new Date().toISOString().slice(0, 10);
    Remis a zero des que le code change de forme (saisie, application). */
 let atcDisabled = new Set();
 
+/**
+ * Saisie des longueurs d'origine, sous la conversion qui la reclame.
+ *
+ * <p>Placee la et non en tete de page : c'est en voyant la conversion qu'on
+ * sait quel champ a ete elargi. La valeur vaut pour tout le source — un champ
+ * n'a qu'une longueur d'origine, quel que soit l'endroit ou il apparait.
+ */
+/**
+ * Code a ajouter ailleurs dans le programme, quand la correction ne tient
+ * pas dans la ligne remplacee.
+ *
+ * <p>Le cas du TRANSFER : reecrire l'appel ne suffit pas, il faut une
+ * routine et deux objets du referentiel. Les taire aurait laisse croire la
+ * correction terminee.
+ */
+function complementHtml(c){
+  if (!c.complement) return '';
+  const id = 'cpl' + (++fixSeq);
+  PENDING_FIX.set(id, c.complement.code);
+  return '<div class="complement">'
+    + '<div class="cplHead"><span class="cplTitre">' + esc(c.complement.titre) + '</span>'
+    + '<button class="btn" data-fixcopy="' + id + '">Copier</button></div>'
+    + '<span class="cplCreer">' + esc(c.complement.aCreer) + '</span>'
+    + '<pre class="cplCode">' + esc(c.complement.code) + '</pre></div>';
+}
+
+function longueursHtml(c){
+  if (!c.champs || !c.champs.length) return '';
+  let html = '<div class="longueurs"><span class="quoi">Longueur d’origine :</span>';
+  for (const champ of c.champs){
+    const valeur = atcLongueurs[champ];
+    const suggere = ATC_LONGUEURS_CONNUES[champ];
+    html += '<label class="lg"><span>' + esc(champ) + '</span>'
+      + '<input type="number" min="1" max="255" data-champ="' + esc(champ) + '"'
+      + (valeur ? ' value="' + valeur + '"' : '')
+      + (suggere ? ' placeholder="' + suggere + '"' : ' placeholder="—"')
+      + '>'
+      // Longueur connue et pas encore retenue : un clic suffit, plutot que
+      // de la retaper. C'est une suggestion, jamais appliquee d'office.
+      + (suggere && valeur !== suggere
+          ? '<button type="button" class="propose" data-suggere="' + esc(champ) + '"'
+            + ' data-taille="' + suggere + '" title="Appliquer la longueur connue">'
+            + suggere + '</button>'
+          : '')
+      + '</label>';
+  }
+  return html + '<span class="pourquoi">Renseignée, le champ est ramené à cette taille '
+       + 'et l’instruction reste un CONCATENATE. Laissée vide, seule la forme est modernisée.</span></div>';
+}
+
+/* Longueurs d'avant l'extension, pour les champs les plus courants. Elles
+   servent de valeurs par defaut ; ce que l'utilisateur saisit les remplace,
+   car la bonne longueur depend de la release et du champ exact. */
+const ATC_LONGUEURS_CONNUES = {MATNR: 18, BISMT: 18, CUOBN: 18, ATWRT: 30, ATWTB: 30};
+
+/* Longueurs saisies par l'utilisateur, au fil des conversions proposees.
+   Clé : nom du champ en majuscules. Les valeurs connues ne servent que de
+   suggestion — tronquer perd des donnees, la decision doit etre explicite. */
+const atcLongueurs = {};
+
+/**
+ * Repose les longueurs sur les lignes telles que le developpeur les a
+ * ecrites, au lieu de reconstruire l'instruction.
+ *
+ * <p>Reconstruire recollait tout sur une seule ligne : un CONCATENATE de
+ * quatre operandes redigé sur quatre lignes en revenait une, longue et
+ * illisible. Ici seule la longueur est ajoutee, l'indentation et les
+ * retours a la ligne d'origine sont conserves.
+ *
+ * <p>Rien n'est touche apres INTO : la cible et le separateur ne sont pas
+ * des operandes a tronquer.
+ */
+function atcPoserLongueurs(lignes, coupes){
+  let passeInto = false;
+  return lignes.map(ligne => {
+    if (passeInto) return ligne;
+    const iInto = ligne.search(/\bINTO\b/i);
+    const tete = iInto < 0 ? ligne : ligne.slice(0, iInto);
+    const queue = iInto < 0 ? '' : ligne.slice(iInto);
+    if (iInto >= 0) passeInto = true;
+
+    let out = tete;
+    for (const [operande, taille] of coupes){
+      const motif = new RegExp('(^|[\\s,])(' + escapeRegExp(operande) + ')(?![\\w\\-(])', 'gi');
+      out = out.replace(motif, (tout, avant, nom) => avant + nom + '(' + taille + ')');
+    }
+    return out + queue;
+  });
+}
+
+/* Nom court d'un operande : « we_z0ccm-atwrt » -> « ATWRT ». */
+function atcNomChamp(operande){
+  return operande.replace(/\(.*$/, '').replace(/^.*-/, '').toUpperCase();
+}
+
 function atcOptions(){
   return {
     marker: $atcMarker.value.trim() || 'COD001',
     author: $atcAuthor.value.trim() || 'AEH',
     date: $atcDate.value || new Date().toISOString().slice(0, 10),
-    targets: $atcTarget.value.toUpperCase().split(/[\s,;]+/).filter(Boolean)
+    targets: $atcTarget.value.toUpperCase().split(/[\s,;]+/).filter(Boolean),
+    lengths: atcLongueurs,
+    prefix: ($atcPrefix.value.trim() || 'ZFI').toUpperCase().replace(/_+$/, '')
   };
 }
 
@@ -2851,7 +3322,8 @@ function renderAtc(){
         + '<span class="atcNum">l.' + c.line + '</span>'
         + '<span class="atcRule">' + esc(c.rule) + '</span></label>'
         + '<div class="fixLine" style="margin-top:4px"><span class="del">' + esc(c.before) + '</span></div>'
-        + '<div class="fixLine" style="margin-top:2px"><span class="add">' + esc(c.after) + '</span></div></li>';
+        + '<div class="fixLine" style="margin-top:2px"><span class="add">' + esc(c.after) + '</span></div>'
+        + longueursHtml(c) + complementHtml(c) + '</li>';
     }
     html += '</ul>';
   }
@@ -2860,6 +3332,18 @@ function renderAtc(){
 }
 
 $atcResults.addEventListener('change', e => {
+  const lg = e.target.closest('input[data-champ]');
+  if (lg){
+    const champ = lg.dataset.champ;
+    const valeur = parseInt(lg.value, 10);
+    if (valeur > 0) atcLongueurs[champ] = valeur; else delete atcLongueurs[champ];
+    renderAtc();
+    // Le rendu recree les champs : on rend la main a celui qu'on remplissait.
+    const rendu = $atcResults.querySelector('input[data-champ="' + champ + '"]');
+    if (rendu){ rendu.focus(); rendu.select(); }
+    return;
+  }
+
   const cb = e.target.closest('input[type="checkbox"][data-key]');
   if (!cb) return;
   const key = Number(cb.dataset.key);
@@ -2873,6 +3357,13 @@ document.getElementById('atcAlpha').addEventListener('change', e => {
 });
 
 $atcResults.addEventListener('click', e => {
+  const propose = e.target.closest('[data-suggere]');
+  if (propose){
+    atcLongueurs[propose.dataset.suggere] = parseInt(propose.dataset.taille, 10);
+    renderAtc();
+    return;
+  }
+
   const toggleAll = e.target.closest('#atcToggleAll');
   if (toggleAll){
     const boxes = [...$atcResults.querySelectorAll('input[data-key]')];
@@ -2951,7 +3442,7 @@ const TAB_PANELS = {
    cochables, mais en retrait — la couverture se lit d'un coup d'oeil, sans
    changer d'onglet. */
 
-let currentTab = 'search';
+let currentTab = 'atc';
 
 function renderNoteBar(){
   let html = '<span class="lead">Notes actives</span><div class="seg">';
@@ -3032,6 +3523,10 @@ $noteBar.addEventListener('mouseleave', () => {
 
 $noteBar.innerHTML = renderNoteBar();
 
+// Onglet d'ouverture : son rendu se fait ici, une fois les elements
+// de l'editeur ATC declares.
+renderAtc();
+
 document.getElementById('tabs').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
@@ -3044,6 +3539,8 @@ document.getElementById('tabs').addEventListener('click', e => {
     document.getElementById(TAB_PANELS[key].controls).hidden = !isActive;
     document.getElementById(TAB_PANELS[key].panel).hidden = !isActive;
   }
+  // La signature ne concerne que les onglets qui reecrivent du code.
+  document.getElementById('signControls').hidden = !(active === 'atc' || active === 'acdoca');
   updateHeaderOffset();
   if (active === 'analyze'){ renderAnalysis(); $code.focus(); }
   else if (active === 'acdoca'){ renderAcdoca(); $acCode.focus(); }

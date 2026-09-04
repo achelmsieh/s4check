@@ -13,7 +13,7 @@
     - toute redistribution, mise a disposition ou publication
     - toute reutilisation de tout ou partie du code dans un autre produit
 
-  Build : 2026-09-03
+  Build : 2026-09-04
   L'empreinte SHA-256 de la version authentique est fournie separement
   (fichier .sha256). Un exemplaire dont l'empreinte differe a ete modifie.
 
@@ -281,7 +281,12 @@ mark.partial-2438006{background:transparent;color:var(--fmod);text-decoration:un
             border-radius:6px;background:var(--fix-bg)}
 .cplHead{display:flex;align-items:center;gap:10px;margin-bottom:4px}
 .cplTitre{font-weight:650;font-size:11.5px;color:var(--fix)}
-.cplHead .btn{margin-left:auto;font-size:11px;padding:2px 9px}
+.cplHead .btn{font-size:11px;padding:2px 9px}
+.cplPrefixe{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:11px;
+            color:var(--ink-soft)}
+.cplPrefixe input{width:64px;font-family:var(--mono);font-size:11px;padding:2px 6px;
+                  border:1px solid var(--rule);border-radius:4px;background:var(--card);
+                  color:var(--ink);text-transform:uppercase}
 .cplCreer{display:block;font-size:11px;color:var(--ink-soft);line-height:1.5;margin-bottom:6px}
 .cplCode{margin:0;padding:8px 10px;border-radius:5px;background:var(--card);
          border:1px solid var(--rule-soft);font-family:var(--mono);font-size:11px;
@@ -557,11 +562,6 @@ html[data-theme="dark"] .fixPre{background:#191920}
                  aria-label="Champs cibles">
         </div>
         <div class="grp">
-          <span>Préfixe Z</span>
-          <input id="atcPrefix" class="mini" type="text" value="ZFI" spellcheck="false"
-                 aria-label="Préfixe des objets Z">
-        </div>
-        <div class="grp">
           <label class="opt"><input type="checkbox" id="atcAlpha" checked>
             ALPHA = OUT sur les n° d'article</label>
         </div>
@@ -641,7 +641,7 @@ html[data-theme="dark"] .fixPre{background:#191920}
 <footer class="wrap">
   <kbd>/</kbd> pour chercher · <kbd>Échap</kbd> pour effacer · recherche insensible à la casse, sous-chaîne.
   <div class="legal">
-    © 2026 Codilog — build 2026-09-03.
+    © 2026 Codilog — build 2026-09-04.
     Usage interne réservé à Codilog. Modification, redistribution et
     réutilisation soumises à autorisation écrite de Codilog.
   </div>
@@ -2725,6 +2725,7 @@ function atcApplyRules(code, targets, ctx, lengths, prefix){
               lines: [`PERFORM ${routine} USING ${structure}.`],
               complement: {
                 titre: 'Routine à ajouter en fin de programme',
+                prefixe: true,
                 aCreer: 'Structure ' + cible + ' (longueurs ECC) et module fonction '
                       + module + ', à créer dans le référentiel.',
                 code: [
@@ -3123,7 +3124,6 @@ const $atcMarker = document.getElementById('atcMarker');
 const $atcAuthor = document.getElementById('atcAuthor');
 const $atcDate = document.getElementById('atcDate');
 const $atcTarget = document.getElementById('atcTarget');
-const $atcPrefix = document.getElementById('atcPrefix');
 const $atcResizer = document.getElementById('atcResizer');
 
 $atcDate.value = new Date().toISOString().slice(0, 10);
@@ -3153,6 +3153,11 @@ function complementHtml(c){
   PENDING_FIX.set(id, c.complement.code);
   return '<div class="complement">'
     + '<div class="cplHead"><span class="cplTitre">' + esc(c.complement.titre) + '</span>'
+    + (c.complement.prefixe
+        ? '<label class="cplPrefixe">Préfixe des objets Z'
+          + '<input type="text" data-prefixe="1" value="' + esc(atcPrefixe) + '"'
+          + ' spellcheck="false" aria-label="Préfixe des objets Z"></label>'
+        : '')
     + '<button class="btn" data-fixcopy="' + id + '">Copier</button></div>'
     + '<span class="cplCreer">' + esc(c.complement.aCreer) + '</span>'
     + '<pre class="cplCode">' + esc(c.complement.code) + '</pre></div>';
@@ -3186,6 +3191,11 @@ function longueursHtml(c){
    servent de valeurs par defaut ; ce que l'utilisateur saisit les remplace,
    car la bonne longueur depend de la release et du champ exact. */
 const ATC_LONGUEURS_CONNUES = {MATNR: 18, BISMT: 18, CUOBN: 18, ATWRT: 30, ATWTB: 30};
+
+/* Prefixe des objets Z a creer. Ne concerne que la regle TRANSFER, et se
+   saisit donc sous la conversion qui le reclame — pas en tete de page, ou il
+   n'aurait rien voulu dire pour les autres regles. */
+let atcPrefixe = 'ZFI';
 
 /* Longueurs saisies par l'utilisateur, au fil des conversions proposees.
    Clé : nom du champ en majuscules. Les valeurs connues ne servent que de
@@ -3234,7 +3244,7 @@ function atcOptions(){
     date: $atcDate.value || new Date().toISOString().slice(0, 10),
     targets: $atcTarget.value.toUpperCase().split(/[\s,;]+/).filter(Boolean),
     lengths: atcLongueurs,
-    prefix: ($atcPrefix.value.trim() || 'ZFI').toUpperCase().replace(/_+$/, '')
+    prefix: atcPrefixe
   };
 }
 
@@ -3332,6 +3342,15 @@ function renderAtc(){
 }
 
 $atcResults.addEventListener('change', e => {
+  const pf = e.target.closest('input[data-prefixe]');
+  if (pf){
+    atcPrefixe = (pf.value.trim() || 'ZFI').toUpperCase().replace(/_+$/, '');
+    renderAtc();
+    const rendu = $atcResults.querySelector('input[data-prefixe]');
+    if (rendu){ rendu.focus(); rendu.select(); }
+    return;
+  }
+
   const lg = e.target.closest('input[data-champ]');
   if (lg){
     const champ = lg.dataset.champ;

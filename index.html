@@ -13,7 +13,7 @@
     - toute redistribution, mise a disposition ou publication
     - toute reutilisation de tout ou partie du code dans un autre produit
 
-  Build : 2026-09-04
+  Build : 2026-09-08
   L'empreinte SHA-256 de la version authentique est fournie separement
   (fichier .sha256). Un exemplaire dont l'empreinte differe a ete modifie.
 
@@ -641,7 +641,7 @@ html[data-theme="dark"] .fixPre{background:#191920}
 <footer class="wrap">
   <kbd>/</kbd> pour chercher · <kbd>Échap</kbd> pour effacer · recherche insensible à la casse, sous-chaîne.
   <div class="legal">
-    © 2026 Codilog — build 2026-09-04.
+    © 2026 Codilog — build 2026-09-08.
     Usage interne réservé à Codilog. Modification, redistribution et
     réutilisation soumises à autorisation écrite de Codilog.
   </div>
@@ -741,6 +741,21 @@ const NOTE_CATALOG = [
          + "CALL FUNCTION. Pour un CONCATENATE, le modèle de chaîne ne supprime le "
          + "débordement que si la cible est de type string : sinon l'affectation "
          + "tronque toujours, même avec une longueur renseignée"},
+  {id: "2220005", note: "2220005", domain: "atc",    cls: "fmod",
+   label: "Tarification SD — KONV remplacée par PRCD_ELEMENTS",
+   aide: "Le résultat de tarification est stocké dans PRCD_ELEMENTS. KONV subsiste "
+       + "comme structure du dictionnaire — déclarations et zones de travail restent "
+       + "valables — mais un SELECT dessus ne ramène plus rien. SAP livre la vue CDS "
+       + "V_KONV, qui expose PRCD_ELEMENTS au format KONV.",
+   couvre: "SELECT sur KONV réécrit vers V_KONV, avec l’INTO explicite que la "
+         + "disparition de la zone de travail implicite rend nécessaire",
+   manuel: "les écritures — INSERT, UPDATE, MODIFY, DELETE — sont formellement "
+         + "interdites sur KONV et ne se remplacent pas par une vue : elles passent "
+         + "par l’API (CL_PRC_RESULT_FACTORY). Restent aussi manuels : les champs "
+         + "supprimés KOLNR3, WEGXX et STUFE ; les numéros de formule passés en "
+         + "NUMC7, dont il ne faut reprendre que les trois derniers chiffres pour "
+         + "reconstruire un nom d’include ; et côté dictionnaire, les champs "
+         + "ajoutés à KONV, à reporter sur PRCS_ELEMENTS_DATA et sur la vue V_KONV"},
   // Sans numero de note : ce sont des controles de programmation robuste, pas
   // des points de simplification S/4. Ils partagent pourtant une seule cause
   // — le code s'appuie sur un ordre de lignes que HANA ne garantit plus — et
@@ -2920,6 +2935,7 @@ const ATC_RULE_NOTE = {
   "CALL FUNCTION (parametre)": "2215424",
   "TRANSFER (format ECC)": "2610650",
   "CALL TRANSACTION MB -> MIGO": "1804812",
+  "SELECT sur KONV": "2220005",
   "SELECT sans ORDER BY": "ORDRE",
   "DELETE ADJACENT DUPLICATES sans tri": "ORDRE",
   "LOOP AT ... AT sans tri": "ORDRE",
@@ -3299,6 +3315,140 @@ function atcApplyRules(code, targets, ctx, lengths, prefix){
     }
   }
 
+  // 12b. Tarification SD : KONV ne contient plus de donnees (note 2220005).
+  //
+  //    Le resultat de tarification est passe dans PRCD_ELEMENTS. KONV reste
+  //    une structure du dictionnaire — les TABLES, les TYPE et les zones de
+  //    travail continuent de fonctionner — mais un SELECT dessus ne ramene
+  //    plus rien. La vue CDS V_KONV expose PRCD_ELEMENTS au format KONV.
+  //
+  //    Ecritures exclues : le cookbook de la note les interdit formellement,
+  //    et une vue ne s'ecrit pas. Elles passent par l'API de tarification,
+  //    dont la forme depend du cas — on ne l'invente pas ici. La regle ne
+  //    reconnait donc que le SELECT.
+  //
+  //    Deux consequences a traiter en meme temps que le nom de la table :
+  //
+  //    1. La zone de travail implicite. « SELECT * FROM konv » remplit la
+  //       zone de travail de la table ; depuis v_konv, ce serait celle de la
+  //       vue. L'INTO doit donc devenir explicite, et en CORRESPONDING
+  //       FIELDS : V_KONV n'a pas exactement la meme liste de champs.
+  //
+  //    2. La syntaxe. Des qu'un @ apparait, l'instruction entiere bascule en
+  //       syntaxe stricte : toutes les variables hote doivent etre echappees,
+  //       et l'INTO passe en derniere clause. Tout ou rien — une variable
+  //       oubliee est une erreur de syntaxe. On ne bascule donc que si chaque
+  //       operande est reconnaissable a coup sur : un litteral, un nom
+  //       compose (une colonne ne porte jamais de tiret) ou un prefixe de
+  //       nommage usuel. Sinon on garde la syntaxe classique, ou l'INTO se
+  //       place juste apres le FROM et ou aucun @ n'est introduit.
+  if (/^SELECT\b/i.test(code) && /\bFROM\s+KONV\b/i.test(code) && ctx && ctx.stmts){
+    const brutes = ctx.stmts[ctx.index].lines;
+    const sorties = brutes.slice();
+
+    // Le nom de la table, dans sa casse d'origine : il sert aussi de nom de
+    // zone de travail, celle que TABLES konv a declaree.
+    const zone = /\bFROM\s+(KONV)\b/i.exec(code)[1];
+
+    // Les mots-cles ajoutes suivent la casse des mots-cles du source, pas
+    // celle du nom de table : « SELECT * FROM konv » melange les deux.
+    const motCle = t => matchCase(/\b(FROM)\s+KONV\b/i.exec(code)[1], t);
+
+    let iFrom = -1;
+    for (let i = 0; i < sorties.length; i++){
+      if (/^\*/.test(sorties[i])) continue;
+      const coupe = atcStripComment(sorties[i]);
+      if (!/\bFROM\s+KONV\b/i.test(coupe.code)) continue;
+      sorties[i] = coupe.code.replace(/(\bFROM\s+)(KONV)\b/i,
+                     (t, avant, nom) => avant + matchCase(nom, 'v_konv')) + coupe.comment;
+      iFrom = i;
+      break;
+    }
+    if (iFrom < 0) return null;
+
+    const aInto = /\bINTO\b|\bAPPENDING\b/i.test(code);
+    let forme = 'nom seul';
+
+    if (!aInto){
+      const litteral = x => /^'/.test(x) || /^[0-9]/.test(x) || /^@/.test(x);
+      const sure = x => /-/.test(x) || /^(?:l|g|w|p|s)[a-z]?_/i.test(x);
+      const reOperande = /((?:=|<>|><|>=|<=|>|<|\bEQ\b|\bNE\b|\bGE\b|\bLE\b|\bGT\b|\bLT\b|\bLIKE\b|\bIN\b)\s+)([^\s()]+)/gi;
+
+      const ouWhere = code.search(/\bWHERE\b/i);
+      const clause = ouWhere >= 0 ? code.slice(ouWhere) : '';
+      const operandes = [];
+      let o;
+      while ((o = reOperande.exec(clause))) operandes.push(o[2]);
+
+      const tousSurs = operandes.every(x => litteral(x) || sure(x));
+      const dejaStrict = code.includes('@');
+
+      if (tousSurs || dejaStrict){
+        forme = 'stricte';
+
+        // Echappement, a partir de la ligne du WHERE seulement : les
+        // operateurs de comparaison n'apparaissent pas avant.
+        let dansWhere = false;
+        for (let i = 0; i < sorties.length; i++){
+          if (/^\*/.test(sorties[i])) continue;
+          const coupe = atcStripComment(sorties[i]);
+          if (!dansWhere && /\bWHERE\b/i.test(coupe.code)) dansWhere = true;
+          if (!dansWhere) continue;
+          reOperande.lastIndex = 0;
+          sorties[i] = coupe.code.replace(reOperande,
+            (t, op, x) => (litteral(x) || !sure(x)) ? t : op + '@' + x) + coupe.comment;
+        }
+
+        // Le point final se deplace : en syntaxe stricte l'INTO est la
+        // derniere clause de l'instruction.
+        for (let i = sorties.length - 1; i >= 0; i--){
+          if (/^\*/.test(sorties[i])) continue;
+          const coupe = atcStripComment(sorties[i]);
+          if (!/\.\s*$/.test(coupe.code.trimEnd())) continue;
+          sorties[i] = coupe.code.replace(/\.(\s*)$/, '$1').trimEnd() + coupe.comment;
+          break;
+        }
+
+        const marge = (brutes[0].match(/^\s*/) || [''])[0];
+        sorties.push(marge + '  ' + motCle('into corresponding fields of')
+                            + ' @' + zone + '.');
+      } else {
+        forme = 'classique';
+        const coupe = atcStripComment(sorties[iFrom]);
+        sorties[iFrom] = coupe.code.replace(/(\bFROM\s+v_konv\b)/i,
+          (t, m1) => m1 + ' ' + motCle('into corresponding fields of')
+                        + ' ' + zone) + coupe.comment;
+      }
+    }
+
+    // Alternative de la note elle-meme : pour une lecture simple, le
+    // cookbook deconseille la vue et renvoie a l'API — PRCD_ELEMENTS est une
+    // table transparente, le buffer des tables cluster n'existe plus.
+    const mKnumv = /\bKNUMV\s*=\s*@?([^\s.]+)/i.exec(code);
+    const mCible = /\b(?:INTO\s+TABLE|APPENDING\s+TABLE)\s+@?([\w<>\-]+)/i.exec(code);
+    const cible = mCible ? mCible[1] : zone;
+
+    return {rule: 'SELECT sur KONV', enPlace: true, lines: sorties,
+            complement: {
+              titre: 'Pour une lecture simple, SAP renvoie à l’API',
+              aCreer: 'Le cookbook de la note 2220005 réserve V_KONV aux sélections '
+                    + 'complexes et aux vues CDS. Pour une lecture qui se résume au '
+                    + 'numéro de document de tarification, il recommande l’API : '
+                    + 'PRCD_ELEMENTS est une table transparente, le buffer des tables '
+                    + 'cluster n’existe plus.',
+              code: [
+                'TRY.',
+                '    cl_prc_result_factory=>get_instance( )->get_prc_result( )->get_price_element_db_by_key(',
+                '      EXPORTING iv_knumv                      = '
+                  + (mKnumv ? mKnumv[1] : 'komk-knumv'),
+                '      IMPORTING et_prc_element_classic_format = ' + cible + ' ).',
+                '  CATCH cx_prc_result.',
+                '    " traitement d’erreur à écrire',
+                'ENDTRY.'
+              ].join('\n')
+            }};
+  }
+
   // 13. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.
   //    Sur les tables pool/cluster devenues transparentes, l'interface base
   //    de donnees n'ajoute plus le tri implicite par cle primaire : on le
@@ -3433,14 +3583,24 @@ function atcConvert(code, opts, disabled){
     // change que quelques-unes. Commenter l'instruction entiere noierait la
     // correction — un appel de module fonction fait douze lignes pour un seul
     // parametre converti. On ne signe donc que ce qui a bouge.
-    if (res.enPlace && res.lines.length === stmt.lines.length){
-      for (let i = 0; i < stmt.lines.length; i++){
+    if (res.enPlace){
+      // Les lignes se correspondent une a une tant qu'il y en a des deux
+      // cotes ; le surplus est un ajout (l'INTO rendu explicite) ou une
+      // suppression, signe comme tel.
+      const commun = Math.min(stmt.lines.length, res.lines.length);
+      for (let i = 0; i < commun; i++){
         if (stmt.lines[i] === res.lines[i]){
           out.push(stmt.lines[i]);
           continue;
         }
         out.push('*' + stmt.lines[i].trimEnd() + ' ' + tagOld);
         out.push(res.lines[i].trimEnd() + ' ' + tagNew);
+      }
+      for (let i = commun; i < res.lines.length; i++){
+        out.push(res.lines[i].trimEnd() + ' ' + tagNew);
+      }
+      for (let i = commun; i < stmt.lines.length; i++){
+        out.push('*' + stmt.lines[i].trimEnd() + ' ' + tagOld);
       }
       changes.push({
         key,
@@ -3450,7 +3610,8 @@ function atcConvert(code, opts, disabled){
         note,
         champs: res.champs || null,
         before: stmt.lines.filter((l, i) => l !== res.lines[i]).map(l => l.trim()).join(' '),
-        after: res.lines.filter((l, i) => l !== stmt.lines[i]).map(l => l.trim()).join(' ')
+        after: res.lines.filter((l, i) => l !== stmt.lines[i]).map(l => l.trim()).join(' '),
+        complement: res.complement || null
       });
       continue;
     }

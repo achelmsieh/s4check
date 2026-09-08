@@ -744,13 +744,16 @@ const NOTE_CATALOG = [
          + "débordement que si la cible est de type string : sinon l'affectation "
          + "tronque toujours, même avec une longueur renseignée"},
   {id: "2198647", note: "2198647", domain: "atc",    cls: "dtyp",
-   label: "Statut des documents SD — VBUK et VBUP vidées",
+   label: "Documents SD — statut, flux et catégorie",
    aide: "Les valeurs de statut sont passées dans les tables de document : VBUK vers "
        + "VBAK, LIKP et VBRK ; VBUP vers VBAP et LIPS. Les deux tables restent au "
        + "dictionnaire pour le typage, mais un SELECT dessus ne ramène plus rien. SAP "
        + "livre les vues CDS V_VBUK_CDS et V_VBUP_CDS, de structure identique.",
    couvre: "SELECT sur VBUK ou VBUP réécrit vers la vue CDS, avec l’INTO explicite et "
-         + "la syntaxe stricte que l’accès à une entité CDS impose",
+         + "la syntaxe stricte que l’accès à une entité CDS impose ; valeurs de VBTYP "
+         + "remplacées par les constantes de IF_SD_DOC_CATEGORY, et CA / NA réécrits "
+         + "en EQ / IN sur les intervalles de CL_SD_DOC_CATEGORY_UTIL ; ORDER BY "
+         + "PRIMARY KEY sur VBFA remplacé par la nouvelle clé",
    manuel: "la vue n’est pas la voie que SAP recommande : lui préférer les données déjà "
          + "lues du document, la table de document quand le type est connu, ou les "
          + "modules SD_VBUK_READ_FROM_DOC / SD_VBUP_READ_FROM_DOC (et leurs variantes "
@@ -761,7 +764,15 @@ const NOTE_CATALOG = [
          + "à rediriger ; les champs ajoutés à VBUK/VBUP, à reporter sur les includes "
          + "de statut VBAK_STATUS, LIKP_STATUS, VBRK_STATUS, VBAP_STATUS, LIPS_STATUS ; "
          + "les vues DDIC qui joignent VBUK ou VBUP ; et les paramètres typés VBUK/VBUP "
-         + "retirés de certains modules fonction"},
+         + "retirés de certains modules fonction. Côté flux VBFA : la clause sur "
+         + "STUFE, dont le sort dépend de la release et de la reconstruction (note "
+         + "2418242), les accès aux niveaux indirects à reprendre par "
+         + "CL_SD_DOCUMENT_FLOW_RT, les READ TABLE sur structure de clé à écrire "
+         + "champ par champ, et le paramètre VBFA_TAB de RV_ORDER_FLOW_INFORMATION "
+         + "désormais typé VBFAS. Côté catégorie : les ensembles sans intervalle "
+         + "livré (méthodes is_…), les déclarations en CHAR1 à repasser en VBTYPL, "
+         + "les éléments de données VBTYP/VBTYP_V/VBTYP_N à rebasculer sur VBTYPL, "
+         + "et les champs _LONG ajoutés aux BAPI et aux IDoc"},
   {id: "2220005", note: "2220005", domain: "atc",    cls: "fmod",
    label: "Tarification SD — KONV remplacée par PRCD_ELEMENTS",
    aide: "Le résultat de tarification est stocké dans PRCD_ELEMENTS. KONV subsiste "
@@ -2959,6 +2970,8 @@ const ATC_RULE_NOTE = {
   "SELECT sur KONV": "2220005",
   "SELECT sur VBUK": "2198647",
   "SELECT sur VBUP": "2198647",
+  "VBTYP (categorie de document)": "2198647",
+  "VBFA ORDER BY PRIMARY KEY": "2198647",
   "SELECT sans ORDER BY": "ORDRE",
   "DELETE ADJACENT DUPLICATES sans tri": "ORDRE",
   "LOOP AT ... AT sans tri": "ORDRE",
@@ -3524,6 +3537,61 @@ function egalitesDuWhere(code){
   return out.length ? out : null;
 }
 
+/* Categorie de document SD : valeur -> constante de IF_SD_DOC_CATEGORY.
+   Reprise de l'annexe 1 du cookbook VBTYP joint a la note 2198647. La
+   valeur 'f' n'y figure pas : elle a ete remplacee par f001 a f004, il n'y
+   a pas de constante unique pour l'ancienne. */
+const VBTYP_VALEUR = {
+  "A": "INQUIRY", "B": "QUOTATION", "C": "ORDER", "D": "ITEM_PROPOSAL",
+  "E": "SCHED_AGREE", "F": "SCHED_AGREE_EXT_SERV_AGENT", "G": "CONTRACT",
+  "H": "RETURNS", "I": "ORDER_WO_CHARGE", "J": "DELIVERY",
+  "K": "CREDIT_MEMO_REQ", "L": "DEBIT_MEMO_REQ", "M": "INVOICE",
+  "N": "INVOICE_CANCEL", "O": "CREDIT_MEMO", "P": "DEBIT_MEMO",
+  "Q": "WMS_TRANS_ORDER", "R": "GOODS_MOVEMENT", "S": "CREDIT_MEMO_CANCEL",
+  "T": "RETURNS_DELIVERY_FOR_ORDER", "U": "PRO_FORMA_INVOICE",
+  "V": "PURCHASE_ORDER", "W": "INDEPENDENT_REQTS_PLAN", "X": "HANDLING_UNIT",
+  "Y": "REBATE_AGREEMENT", "0": "MASTER_CONTRACT", "1": "SALES_ACTIVITIES",
+  "2": "EXTERNAL_TRANSACTION", "3": "INVOICE_LIST", "4": "CREDIT_MEMO_LIST",
+  "5": "INTERCOMPANY_INVOICE", "6": "INTERCOMPANY_CREDIT_MEMO",
+  "7": "DELIVERY_SHIPPING_NOTIF", "8": "SHIPMENT", "a": "SHIPMENT_COSTS",
+  "b": "CRM_OPPORTUNITY", "c": "UNVERIFIED_DELIVERY", "d": "TRADING_CONTRACT",
+  "e": "ALLOCATION_TABLE", "g": "ROUGH_GOODS_RECEIPT_IS_RETAIL",
+  "h": "CANCEL_GOODS_MOVEMENT", "i": "GOODS_RECEIPT", "j": "JIT_CALL",
+  "p": "GOODS_MOVEMENT_DOCUMENTATION", "r": "TD_TRANSPORT_IS_OIL",
+  "s": "LOAD_CONF_REPOSTING_IS_OIL", "t": "GAIN_LOSS_IS_OIL",
+  "u": "REENTRY_INTO_STORAGE_IS_OIL", "v": "DATA_COLLATION_IS_OIL",
+  "w": "RESERV_IS_OIL", "x": "LOAD_CONF_GOODS_RECEIPT_IS_OIL", "$": "AFS",
+  "+": "ACCOUNTING_DOCUMENT_PLUS", "-": "ACCOUNTING_DOCUMENT_MINUS",
+  "#": "REVENUE_RECOGNITION", "~": "REVENUE_CANCELLATION",
+  "\u00a7": "REVENUE_RECOGNITION_NEW_VIEW", "!": "REVENUE_CANCELLATION_NEW_VIEW",
+  ":": "SERVICE_ORDER", ".": "SERVICE_NOTIFICATION", "&": "WAREHOUSE_DOCUMENT",
+  "*": "PICK_ORDER", ",": "SHIPMENT_DOCUMENT",
+  "f001": "BILL_PERIOD_END_INV", "f002": "BILL_PERIOD_END_CRED_MEMO",
+  "f003": "BILL_PERIOD_END_INV_IB", "f004": "BILL_PERIOD_END_CRED_MEM_IB"
+};
+
+/* Ensembles de valeurs -> intervalle de CL_SD_DOC_CATEGORY_UTIL. La cle est
+   l'ensemble tel qu'il s'ecrivait, litteral ou constante de l'include
+   RVVBTYP. Seuls les ensembles qui ont un intervalle figurent ici : sans
+   intervalle, un CA ne se reecrit pas en IN, et la reprise reste manuelle. */
+const VBTYP_ENSEMBLE = {
+  "ABCDEFGHIKLW0": "rg_any_sales", "VBTYP_VERK": "rg_any_sales",
+  "VBTYP_VERK_BED": "rg_any_sales",
+  "CEFHIW": "rg_any_order", "VBTYP_AUFT": "rg_any_order",
+  "VBTYP_AUFT_BED": "rg_any_order",
+  "JT7G": "rg_any_delivery", "VBTYP_DELV": "rg_any_delivery",
+  "JT": "rg_delivery_outgoing", "VBTYP_LIEF": "rg_delivery_outgoing",
+  "VBTYP_LIEF_BED": "rg_delivery_outgoing",
+  "KL": "rg_credit_or_debit_memo_req", "VBTYP_ANFO": "rg_credit_or_debit_memo_req",
+  "MNOPSU56": "rg_any_invoice", "VBTYP_FAKT": "rg_any_invoice",
+  "MNOPS": "rg_any_invoice_basedate", "VBTYP_FAKT_BASEDAT": "rg_any_invoice_basedate",
+  "NS": "rg_invoice_or_credit_memo_canc", "VBTYP_FAKT_STO": "rg_invoice_or_credit_memo_canc",
+  "34": "rg_any_invoice_list", "VBTYP_RELI": "rg_any_invoice_list",
+  "56": "rg_any_intercompany", "VBTYP_FKIV": "rg_any_intercompany",
+  "RH": "rg_goods_movement", "VBTYP_WA": "rg_goods_movement",
+  "HKNOT6": "rg_any_retour", "VBTYP_RETOUR": "rg_any_retour"
+};
+
 /* Cle de GET_PRICE_ELEMENT_DB_BY_KEY, dans l'ordre de la cle. Au-dela de ces
    quatre champs, la methode n'a pas de parametre : la restriction passe
    alors par GET_PRICE_ELEMENT_DB et sa liste de couples champ/valeur. */
@@ -3916,6 +3984,89 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
                           + 'tables de document, seule la vue le reconstitue.'
                         : '')
             }};
+  }
+
+  // 12e. Categorie de document SD : VBTYP passe de CHAR1 a CHAR4 (2198647).
+  //
+  //    Deux consequences, et la seconde est un piege silencieux.
+  //
+  //    Les litteraux d'abord : « vbtyp EQ '7' » reste juste, mais le
+  //    cookbook demande de passer aux constantes de IF_SD_DOC_CATEGORY —
+  //    sans quoi le jour ou une valeur depasse un caractere, la comparaison
+  //    devient fausse sans prevenir. Les valeurs f001 a f004 existent deja.
+  //
+  //    Le CA ensuite. « contains any » etait la facon d'ecrire « fait
+  //    partie de » sur un champ d'un caractere. Sur CHAR4 il est faux : il
+  //    repond vrai des qu'UN caractere concorde. Le cookbook est net —
+  //    l'operateur doit devenir EQ pour une valeur, IN pour un ensemble.
+  if (/\bvbtypl?(?:_[vn])?\b/i.test(code)){
+    const brutes = ctx && ctx.stmts ? ctx.stmts[ctx.index].lines : null;
+    if (brutes){
+      const sorties = brutes.slice();
+      const reComp = /((?:[A-Za-z_][\w<>]*-)?vbtypl?(?:_[vn])?)(\s*)(=|<>|\bEQ\b|\bNE\b|\bCA\b|\bNA\b)(\s*)('(?:[^']|'')*'|[A-Za-z_]\w*)/gi;
+      let touche = 0;
+
+      for (let i = 0; i < sorties.length; i++){
+        if (/^\*/.test(sorties[i])) continue;
+        const coupe = atcStripComment(sorties[i]);
+        reComp.lastIndex = 0;
+        const neuf = coupe.code.replace(reComp, (tout, champ, e1, op, e2, operande) => {
+          const litteral = /^'/.test(operande);
+          const valeur = litteral ? operande.slice(1, -1) : operande;
+          const OP = op.toUpperCase();
+          const ensemble = VBTYP_ENSEMBLE[valeur.toUpperCase()];
+
+          // CA / NA sur un ensemble connu : l'intervalle dit la meme chose,
+          // et le dit juste sur quatre caracteres.
+          if ((OP === 'CA' || OP === 'NA') && ensemble){
+            touche++;
+            const test = champ + e1 + matchCase(op, 'in') + e2
+                       + 'cl_sd_doc_category_util=>' + ensemble + '( )';
+            return OP === 'NA' ? matchCase(op, 'not') + ' ' + test : test;
+          }
+
+          // Une valeur unique : la constante, et EQ si c'etait un CA.
+          const nom = litteral ? VBTYP_VALEUR[valeur] : null;
+          if (!nom) return tout;
+          touche++;
+          const opNeuf = (OP === 'CA') ? matchCase(op, 'eq')
+                       : (OP === 'NA') ? matchCase(op, 'ne') : op;
+          return champ + e1 + opNeuf + e2 + 'if_sd_doc_category=>' + nom.toLowerCase();
+        });
+        if (neuf !== coupe.code) sorties[i] = neuf + coupe.comment;
+      }
+
+      if (touche){
+        return {rule: 'VBTYP (categorie de document)', enPlace: true, lines: sorties};
+      }
+    }
+  }
+
+  // 12f. Flux de documents SD : la cle primaire de VBFA a change (2198647).
+  //
+  //    ORDER BY PRIMARY KEY ne rend donc plus le meme ordre. Le cookbook
+  //    donne la liste a ecrire en clair : vbelv posnv vbeln posnn vbtyp_n.
+  //    C'est la seule adaptation VBFA qui se deduise de l'instruction ;
+  //    STUFE et les READ TABLE sur structure de cle dependent du niveau de
+  //    la release et de declarations qui ne sont pas ici.
+  if (/^SELECT\b/i.test(code) && /\bFROM\s+VBFA\b/i.test(code)
+      && /\bORDER\s+BY\s+PRIMARY\s+KEY\b/i.test(code) && ctx && ctx.stmts){
+    const brutes = ctx.stmts[ctx.index].lines;
+    const sorties = brutes.slice();
+    // La syntaxe stricte separe les champs par des virgules ; l'ancienne,
+    // par des blancs. On suit celle de l'instruction.
+    const strict = code.replace(/'(?:''|[^'])*'/g, "''").includes('@');
+    const cles = ['vbelv', 'posnv', 'vbeln', 'posnn', 'vbtyp_n'].join(strict ? ', ' : ' ');
+    let fait = false;
+    for (let i = 0; i < sorties.length && !fait; i++){
+      if (/^\*/.test(sorties[i])) continue;
+      const coupe = atcStripComment(sorties[i]);
+      if (!/\bORDER\s+BY\s+PRIMARY\s+KEY\b/i.test(coupe.code)) continue;
+      sorties[i] = coupe.code.replace(/\b(ORDER\s+BY\s+)PRIMARY\s+KEY\b/i,
+                     (t, tete) => tete + matchCase(tete, cles)) + coupe.comment;
+      fait = true;
+    }
+    if (fait) return {rule: 'VBFA ORDER BY PRIMARY KEY', enPlace: true, lines: sorties};
   }
 
   // 13. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.

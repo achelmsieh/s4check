@@ -3479,10 +3479,16 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
 
     // Un nom libre : le programme colle peut deja porter lt_konv.
     const pris = new Set();
+    const symboles = new Set();
     for (const st of ctx.stmts){
+      const texte = atcStmtCode(st);
       const re = /[A-Za-z_][A-Za-z0-9_]*/g;
       let t;
-      while ((t = re.exec(atcStmtCode(st)))) pris.add(t[0].toLowerCase());
+      while ((t = re.exec(texte))) pris.add(t[0].toLowerCase());
+      // Les symboles de champ forment un espace de noms a part : <konv> ne
+      // heurte pas la zone de travail konv.
+      const reSym = /<[A-Za-z_][A-Za-z0-9_]*>/g;
+      while ((t = reSym.exec(texte))) symboles.add(t[0].toLowerCase());
     }
     let table = 'lt_' + zone.toLowerCase();
     for (let i = 2; pris.has(table.toLowerCase()); i++) table = 'lt_' + zone.toLowerCase() + i;
@@ -3493,21 +3499,55 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
 
     // La ligne qui rend a la suite du programme ce que le SELECT lui donnait.
     const recue = (!aInto ? zone : (mZone && !mTable && !mAppend ? mZone[1] : ''));
-    let raccord = '';
+
+    // Le raccord passe par MOVE-CORRESPONDING, pas par une affectation
+    // directe. La table rendue par l'API est typee
+    // IF_PRC_RESULT_DATABASE=>TY_RESULT_CLASSIC_FORMAT_T : « format classique »
+    // veut dire au format de KONV, pas forcement du type KONV. Rien ici ne
+    // permet d'affirmer que les deux lignes sont identiques, et c'est deja le
+    // raisonnement tenu plus haut pour V_KONV, ou l'INTO est en CORRESPONDING
+    // FIELDS. Un champ par champ coute une ligne et ne se discute pas.
+    let symbole = '<' + zone.toLowerCase() + '>';
+    for (let i = 2; symboles.has(symbole.toLowerCase()); i++){
+      symbole = '<' + zone.toLowerCase() + i + '>';
+    }
+
+    let raccord = [];
     if (direct){
-      raccord = '';
+      raccord = [];
     } else if (mCorrTable){
-      raccord = motCle('move-corresponding') + ' ' + table + '[] '
-              + motCle('to') + ' ' + mCorrTable[1] + '[].';
+      raccord = [motCle('move-corresponding') + ' ' + table + '[] '
+               + motCle('to') + ' ' + mCorrTable[1] + '[].'];
     } else if (mAppend){
-      raccord = motCle('append lines of') + ' ' + table + ' '
-              + motCle('to') + ' ' + mAppend[1] + '.';
+      // KEEPING TARGET LINES : l'APPENDING ajoutait aux lignes deja presentes,
+      // un MOVE-CORRESPONDING nu les effacerait.
+      raccord = [motCle('move-corresponding') + ' ' + table + '[] '
+               + motCle('to') + ' ' + mAppend[1] + '[] '
+               + motCle('keeping target lines') + '.'];
     } else if (unique){
-      raccord = motCle('read table') + ' ' + table + ' ' + motCle('into') + ' '
-              + (recue || zone) + ' ' + motCle('index') + ' 1.';
+      // SELECT SINGLE alimentait sy-subrc : le READ TABLE le refait, et la
+      // reprise de la zone de travail reste sous condition.
+      raccord = [
+        motCle('read table') + ' ' + table + ' ' + motCle('assigning field-symbol')
+          + '(' + symbole + ') ' + motCle('index') + ' 1.',
+        motCle('if') + ' sy-subrc = 0.',
+        '  ' + motCle('clear') + ' ' + (recue || zone) + '.',
+        '  ' + motCle('move-corresponding') + ' ' + symbole + ' '
+          + motCle('to') + ' ' + (recue || zone) + '.',
+        motCle('endif') + '.'
+      ];
     } else {
-      raccord = motCle('loop at') + ' ' + table + ' ' + motCle('into') + ' '
-              + (recue || zone) + '.';
+      // CLEAR avant le report : le SELECT remplissait toute la zone a chaque
+      // tour. MOVE-CORRESPONDING ne touche que les champs de meme nom — sans
+      // le CLEAR, un champ absent de la table rendue garderait la valeur du
+      // tour precedent, en silence.
+      raccord = [
+        motCle('loop at') + ' ' + table + ' ' + motCle('assigning field-symbol')
+          + '(' + symbole + ').',
+        '  ' + motCle('clear') + ' ' + (recue || zone) + '.',
+        '  ' + motCle('move-corresponding') + ' ' + symbole + ' '
+          + motCle('to') + ' ' + (recue || zone) + '.'
+      ];
     }
     const boucle = !direct && !mCorrTable && !mAppend && !unique;
 
@@ -3570,14 +3610,17 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
 
       // La table intermediaire est declaree dans le bloc : sans cela, le
       // code propose reference un nom qui n'existe nulle part.
+      // Le type vient de l'interface elle-meme : un STANDARD TABLE OF konv
+      // ecrit a la main devrait etre compatible avec le parametre, qui est
+      // entierement type. Reprendre son type ne laisse pas la question ouverte.
       if (!direct){
         api.unshift('');
-        api.unshift(marge + motCle('data') + ' ' + table + ' '
-                    + motCle('type standard table of') + ' ' + zone + '.');
+        api.unshift(marge + motCle('data') + ' ' + table + ' ' + motCle('type')
+                    + ' if_prc_result_database=>ty_result_classic_format_t.');
       }
-      if (raccord){
+      if (raccord.length){
         api.push('');
-        api.push(marge + raccord);
+        for (const l of raccord) api.push(marge + l);
       }
 
       complement = {
@@ -3599,17 +3642,52 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
               + 'et_prc_element rendrait le format PRCD_ELEMENTS, et les variantes '
               + 'DRAFT visent PRCD_ELEM_DRAFT.'
               + (direct ? ''
-                  : ' L’API rend une table de ' + zone.toUpperCase() + ' et rien '
-                    + 'd’autre : le bloc déclare ' + table + ', puis rend à la suite '
-                    + 'du programme ce que le SELECT lui donnait.')
-              + (boucle ? ' Le ENDSELECT devient ENDLOOP ; la zone de travail '
-                  + zone + ' est remplie ligne à ligne comme avant, le corps de '
-                  + 'boucle n’a donc pas à changer.' : '')
+                  : ' L’API écrit dans sa propre table : le bloc déclare ' + table
+                    + ' avec le type de l’interface, puis rend à la suite du '
+                    + 'programme ce que le SELECT lui donnait. Le report se fait '
+                    + 'champ par champ — « format classique » veut dire au format '
+                    + 'de ' + zone.toUpperCase() + ', pas forcément du même type.')
+              + (boucle ? ' La boucle est reprise entière, corps et ENDSELECT '
+                  + 'compris : ' + zone + ' est remplie à chaque tour comme avant, '
+                  + 'le corps est recopié tel quel.' : '')
       };
+      // Quand le SELECT ouvre une boucle, le bloc la reprend entiere :
+      // corps et ENDSELECT compris. Un complement qui s'arreterait au LOOP AT
+      // ne serait pas collable — il laisserait un ENDSELECT sans SELECT, et
+      // c'est au lecteur de retrouver ce qui va entre les deux.
+      //
+      // Le corps est recopie tel quel : il porte souvent ses propres
+      // marqueurs de reprise, qui ne nous appartiennent pas.
+      let avant = brutes.slice();
+      let apres = [];
+      if (boucle){
+        const corps = [];
+        let fin = -1;
+        for (let i = ctx.index + 1; i < ctx.stmts.length; i++){
+          const texte = atcStmtCode(ctx.stmts[i]);
+          // Une boucle imbriquee : on ne saurait pas dire quel ENDSELECT
+          // ferme laquelle, on s'abstient de reprendre le corps.
+          if (/^SELECT\b/i.test(texte) && !/\bINTO\s+TABLE\b|\bSELECT\s+SINGLE\b/i.test(texte)){
+            fin = -1;
+            break;
+          }
+          if (/^ENDSELECT\s*\.$/i.test(texte)){ fin = i; break; }
+          corps.push(...ctx.stmts[i].lines);
+        }
+        if (fin >= 0){
+          const finLignes = ctx.stmts[fin].lines;
+          avant = avant.concat(corps, finLignes);
+          apres = corps.concat(
+            finLignes.map(l => l.replace(/\bENDSELECT\b/i,
+                                m => matchCase(m, 'endloop'))));
+        }
+      }
+
       complement.code = [`*<<${marque}- ${sceau}`]
-        .concat(brutes.map(l => '*' + l))
+        .concat(avant.map(l => '*' + l))
         .concat([`*${marque}->>`, `*<<${marque}+ ${sceau}`])
         .concat(api)
+        .concat(apres)
         .concat([`*${marque}+>>`])
         .join('\n');
     }

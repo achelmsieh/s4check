@@ -3425,44 +3425,68 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     const aInto = /\bINTO\b|\bAPPENDING\b/i.test(code);
 
     if (!aInto){
-      // Rendre l'INTO explicite, et rien de plus.
+      // Rendre l'INTO explicite, en syntaxe stricte.
       //
       // « SELECT * FROM konv » remplissait la zone de travail de la table ;
       // depuis v_konv, ce serait celle de la vue. L'INTO doit donc devenir
       // explicite, et en CORRESPONDING FIELDS : la vue n'expose pas
       // forcement exactement la meme liste de champs.
       //
-      // On ne bascule pas en syntaxe stricte pour autant. Elle imposerait
-      // d'echapper toutes les variables hote et de deplacer l'INTO en fin
-      // d'instruction : trois lignes de WHERE archivees et reecrites pour
-      // une selection qui ne change pas. En syntaxe classique l'INTO se
-      // place juste apres le FROM, et la seule ligne touchee est celle qui
-      // portait deja le nom de la table.
+      // Et V_KONV est une vue CDS : son acces reclame le controle de syntaxe
+      // strict, donc toutes les variables hote echappees et l'INTO en
+      // derniere clause. Les lignes du WHERE changent pour cela seul — c'est
+      // le prix de la vue, pas un choix de mise en forme.
       //
-      // Une exception : si le source est deja en syntaxe stricte, on ne peut
-      // pas revenir en arriere — l'INTO y est la derniere clause, et le
-      // WHERE porte deja ses @.
-      // Le @ se cherche hors des litteraux : « WHERE kschl = '@X' » n'est
-      // pas de la syntaxe stricte, et y ajouter un INTO en derniere clause
-      // ferait echouer la syntaxe.
-      const horsLitteraux = code.replace(/'(?:''|[^'])*'/g, "''");
-      if (horsLitteraux.includes('@')){
-        for (let i = sorties.length - 1; i >= 0; i--){
-          if (/^\*/.test(sorties[i])) continue;
-          const coupe = atcStripComment(sorties[i]);
-          if (!/\.\s*$/.test(coupe.code.trimEnd())) continue;
-          sorties[i] = coupe.code.replace(/\.(\s*)$/, '$1').trimEnd() + coupe.comment;
-          break;
-        }
-        const marge = (brutes[0].match(/^\s*/) || [''])[0];
-        sorties.push(marge + '  ' + motCle('into corresponding fields of')
-                            + ' @' + zone + '.');
-      } else {
-        const coupe = atcStripComment(sorties[iFrom]);
-        sorties[iFrom] = coupe.code.replace(/(\bFROM\s+v_konv\b)/i,
-          (t, m1) => m1 + ' ' + motCle('into corresponding fields of')
-                        + ' ' + zone) + coupe.comment;
+      // Qu'est-ce qu'une variable hote ? Tout operande de droite qui n'est ni
+      // un litteral, ni deja echappe, ni le nom d'une colonne citee a gauche
+      // dans le meme WHERE : la seule facon pour un operande de droite d'etre
+      // une colonne est d'etre compare a une autre colonne.
+      const ouWhere = code.search(/\bWHERE\b/i);
+      const clause = ouWhere >= 0 ? code.slice(ouWhere) : '';
+      const OPS = '(?:=|<>|><|>=|=<|<=|=>|>|<|\\bEQ\\b|\\bNE\\b|\\bGE\\b|\\bLE\\b|\\bGT\\b|\\bLT\\b|\\bLIKE\\b|\\bIN\\b)';
+
+      const colonnes = new Set();
+      const reColonne = new RegExp('(?:\\bWHERE\\b|\\bAND\\b|\\bOR\\b)\\s*(?:\\w+~)?([A-Za-z_]\\w*)\\s*' + OPS, 'gi');
+      let cm;
+      while ((cm = reColonne.exec(clause))) colonnes.add(cm[1].toLowerCase());
+
+      const litteral = x => /^'/.test(x) || /^[0-9]/.test(x) || /^@/.test(x);
+      const aEchapper = x => !litteral(x) && !colonnes.has(x.toLowerCase());
+      const reOperande = new RegExp('(' + OPS + '\\s+)([^\\s()]+)', 'gi');
+
+      let dansWhere = false;
+      for (let i = 0; i < sorties.length; i++){
+        if (/^\*/.test(sorties[i])) continue;
+        const coupe = atcStripComment(sorties[i]);
+        if (!dansWhere && /\bWHERE\b/i.test(coupe.code)) dansWhere = true;
+        if (!dansWhere) continue;
+        reOperande.lastIndex = 0;
+        // ><, =< et => sont refuses par le controle strict, comme dans les
+        // classes. Leur equivalent moderne dit la meme chose.
+        sorties[i] = coupe.code
+          .replace(/><|=</g, m => m === '><' ? '<>' : '<=')
+          .replace(/=>/g, '>=')
+          .replace(reOperande, (t, op, x) => aEchapper(x) ? op + '@' + x : t)
+          + coupe.comment;
       }
+
+      // Le point final se deplace : en syntaxe stricte l'INTO est la
+      // derniere clause de l'instruction.
+      for (let i = sorties.length - 1; i >= 0; i--){
+        if (/^\*/.test(sorties[i])) continue;
+        const coupe = atcStripComment(sorties[i]);
+        if (!/\.\s*$/.test(coupe.code.trimEnd())) continue;
+        // Le point cede la place a un blanc, pas au vide : sur une ligne
+        // commentee, le rogner collerait le code au guillemet et decalerait
+        // le commentaire de toutes les lignes voisines.
+        const sansPoint = coupe.code.replace(/\.(\s*)$/, ' $1');
+        sorties[i] = (coupe.comment ? sansPoint : sansPoint.trimEnd()) + coupe.comment;
+        break;
+      }
+
+      const marge = (brutes[0].match(/^\s*/) || [''])[0];
+      sorties.push(marge + '  ' + motCle('into corresponding fields of')
+                          + ' @' + zone + '.');
     }
 
     // Ce que le SELECT alimentait, pour savoir quoi lui rendre : une table,
@@ -3574,19 +3598,25 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
       }
     }
 
-    const parApi = !!eg && (!boucle || finBoucle >= 0);
+    // Le ENDSELECT introuvable — collage tronque, ou boucle imbriquee — ne
+    // ferme pas la porte a l'API : la conversion reste juste, seule sa
+    // fermeture est a reprendre a la main. On le dit dans le code produit
+    // plutot que de retomber sur la vue sans explication.
+    const parApi = !!eg;
 
     if (!parApi){
       // Pas d'API possible : la vue fait le travail, et on le dit.
+      // Pas de code ici : la conversion au-dessus EST la reponse, avec son
+      // original commente et son bouton. Le repeter sans archive n'ajoutait
+      // rien et contredisait la convention.
       return {rule: 'SELECT sur KONV', enPlace: true, lines: sorties,
-              complement: eg ? null : {
+              complement: {
                 titre: 'L’API ne sait pas exprimer cette restriction',
                 aCreer: 'GET_PRICE_ELEMENT_DB_BY_KEY ne prend que les quatre champs '
                       + 'de la clé, et GET_PRICE_ELEMENT_DB une liste d’égalités. Ni '
                       + 'l’une ni l’autre ne rend un intervalle, un OR ou un LIKE. '
                       + 'C’est précisément le cas où le cookbook désigne V_KONV : la '
-                      + 'conversion ci-dessus est la bonne réponse.',
-                code: sorties.join('\n')
+                      + 'conversion ci-dessus est la bonne réponse.'
               }};
     }
 
@@ -3631,6 +3661,10 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     if (raccord.length){
       api.push('');
       for (const l of raccord) api.push(l);
+    }
+    if (boucle && finBoucle < 0){
+      api.push('" le ENDSELECT de cette boucle est a remplacer par ENDLOOP :');
+      api.push('" il ne figure pas dans le code colle.');
     }
 
     // --- La vue en alternative ----------------------------------------------
@@ -3943,8 +3977,15 @@ let atcDisabled = new Set();
  */
 function complementHtml(c){
   if (!c.complement) return '';
-  const id = 'cpl' + (++fixSeq);
-  PENDING_FIX.set(id, c.complement.code);
+
+  // Un complement peut n'etre qu'une explication — pourquoi telle voie n'est
+  // pas ouverte. Ni bouton ni bloc dans ce cas : il n'y a rien a copier.
+  const code = c.complement.code || '';
+  let id = '';
+  if (code){
+    id = 'cpl' + (++fixSeq);
+    PENDING_FIX.set(id, code);
+  }
   return '<div class="complement">'
     + '<div class="cplHead"><span class="cplTitre">' + esc(c.complement.titre) + '</span>'
     + (c.complement.prefixe
@@ -3952,9 +3993,11 @@ function complementHtml(c){
           + '<input type="text" data-prefixe="1" value="' + esc(atcPrefixe) + '"'
           + ' spellcheck="false" aria-label="Préfixe des objets Z"></label>'
         : '')
-    + '<button class="btn" data-fixcopy="' + id + '">Copier</button></div>'
+    + (code ? '<button class="btn" data-fixcopy="' + id + '">Copier</button>' : '')
+    + '</div>'
     + '<span class="cplCreer">' + esc(c.complement.aCreer) + '</span>'
-    + '<pre class="cplCode">' + esc(c.complement.code) + '</pre></div>';
+    + (code ? '<pre class="cplCode">' + esc(code) + '</pre>' : '')
+    + '</div>';
 }
 
 /**

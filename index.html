@@ -743,6 +743,25 @@ const NOTE_CATALOG = [
          + "CALL FUNCTION. Pour un CONCATENATE, le modèle de chaîne ne supprime le "
          + "débordement que si la cible est de type string : sinon l'affectation "
          + "tronque toujours, même avec une longueur renseignée"},
+  {id: "2198647", note: "2198647", domain: "atc",    cls: "dtyp",
+   label: "Statut des documents SD — VBUK et VBUP vidées",
+   aide: "Les valeurs de statut sont passées dans les tables de document : VBUK vers "
+       + "VBAK, LIKP et VBRK ; VBUP vers VBAP et LIPS. Les deux tables restent au "
+       + "dictionnaire pour le typage, mais un SELECT dessus ne ramène plus rien. SAP "
+       + "livre les vues CDS V_VBUK_CDS et V_VBUP_CDS, de structure identique.",
+   couvre: "SELECT sur VBUK ou VBUP réécrit vers la vue CDS, avec l’INTO explicite et "
+         + "la syntaxe stricte que l’accès à une entité CDS impose",
+   manuel: "la vue n’est pas la voie que SAP recommande : lui préférer les données déjà "
+         + "lues du document, la table de document quand le type est connu, ou les "
+         + "modules SD_VBUK_READ_FROM_DOC / SD_VBUP_READ_FROM_DOC (et leurs variantes "
+         + "_MULTI) quand il ne l’est pas. Sur V_VBUK_CDS, préciser VBOBJ : c’est une "
+         + "union de VBAK, LIKP et VBRK, un même n° de document peut y répondre "
+         + "plusieurs fois. VBOBJ n’existe pas dans les tables de document. Restent "
+         + "aussi manuels : les écritures — INSERT, UPDATE, DELETE — à retirer et non "
+         + "à rediriger ; les champs ajoutés à VBUK/VBUP, à reporter sur les includes "
+         + "de statut VBAK_STATUS, LIKP_STATUS, VBRK_STATUS, VBAP_STATUS, LIPS_STATUS ; "
+         + "les vues DDIC qui joignent VBUK ou VBUP ; et les paramètres typés VBUK/VBUP "
+         + "retirés de certains modules fonction"},
   {id: "2220005", note: "2220005", domain: "atc",    cls: "fmod",
    label: "Tarification SD — KONV remplacée par PRCD_ELEMENTS",
    aide: "Le résultat de tarification est stocké dans PRCD_ELEMENTS. KONV subsiste "
@@ -2938,6 +2957,8 @@ const ATC_RULE_NOTE = {
   "TRANSFER (format ECC)": "2610650",
   "CALL TRANSACTION MB -> MIGO": "1804812",
   "SELECT sur KONV": "2220005",
+  "SELECT sur VBUK": "2198647",
+  "SELECT sur VBUP": "2198647",
   "SELECT sans ORDER BY": "ORDRE",
   "DELETE ADJACENT DUPLICATES sans tri": "ORDRE",
   "LOOP AT ... AT sans tri": "ORDRE",
@@ -2978,6 +2999,152 @@ function atcAlphaOf(src){
 }
 
 /* --- Les regles, dans l'ordre de priorite --- */
+/**
+ * Reecrit un SELECT vers la vue CDS de compatibilite d'une table videe.
+ *
+ * <p>Plusieurs tables suivent le meme schema en S/4 : la table reste au
+ * dictionnaire pour le typage mais ne contient plus rien, et SAP livre une
+ * vue CDS de meme structure. La reecriture est la meme a chaque fois, elle
+ * est donc ecrite une fois.
+ *
+ * <p>Elle ne se limite pas au nom de la table :
+ *
+ * <ul>
+ *   <li>l'acces a une entite CDS met le controle de syntaxe en mode strict
+ *       (7.40 SP05) — toutes les variables hote echappees, et l'INTO en
+ *       derniere clause ;</li>
+ *   <li>la zone de travail implicite de l'ancienne table doit devenir un
+ *       INTO explicite, en CORRESPONDING FIELDS puisque la vue n'expose pas
+ *       forcement la meme liste de champs.</li>
+ * </ul>
+ *
+ * @param brutes lignes du source, telles qu'ecrites
+ * @param code   l'instruction recollee, commentaires retires
+ * @param source nom de la table videe
+ * @param vue    nom de la vue CDS qui la remplace
+ * @return {lignes, zone, motCle, aInto, strictOk}, ou null si le FROM
+ *         attendu ne se trouve sur aucune ligne vivante
+ */
+function reecrireVersVueCds(brutes, code, source, vue){
+  const sorties = brutes.slice();
+  const reFrom = new RegExp('\\bFROM\\s+' + source + '\\b', 'i');
+
+  // Le nom de la table dans sa casse d'origine : il sert aussi de nom de
+  // zone de travail, celle que TABLES a declaree.
+  const mZoneNom = new RegExp('\\bFROM\\s+(' + source + ')\\b', 'i').exec(code);
+  if (!mZoneNom) return null;
+  const zone = mZoneNom[1];
+
+  // Les mots-cles ajoutes suivent la casse des mots-cles du source, pas
+  // celle du nom de table : « SELECT * FROM vbuk » melange les deux.
+  const temoin = new RegExp('\\b(FROM)\\s+' + source + '\\b', 'i').exec(code)[1];
+  const motCle = t => matchCase(temoin, t);
+
+  let iFrom = -1;
+  for (let i = 0; i < sorties.length; i++){
+    if (/^\*/.test(sorties[i])) continue;
+    const coupe = atcStripComment(sorties[i]);
+    if (!reFrom.test(coupe.code)) continue;
+    sorties[i] = coupe.code.replace(new RegExp('(\\bFROM\\s+)(' + source + ')\\b', 'i'),
+                   (t, avant, nom) => avant + matchCase(nom, vue)) + coupe.comment;
+    iFrom = i;
+    break;
+  }
+  if (iFrom < 0) return null;
+
+  const aInto = /\bINTO\b|\bAPPENDING\b/i.test(code);
+  let strictOk = true;
+
+  const ouWhere = code.search(/\bWHERE\b/i);
+  const clause = ouWhere >= 0 ? code.slice(ouWhere) : '';
+  const OPS = '(?:=|<>|><|>=|=<|<=|=>|>|<|\\bEQ\\b|\\bNE\\b|\\bGE\\b|\\bLE\\b|\\bGT\\b|\\bLT\\b|\\bLIKE\\b|\\bIN\\b)';
+
+  // Une colonne est un nom cite a gauche d'une comparaison : c'est la seule
+  // facon pour un operande de droite de ne pas etre une variable hote.
+  const colonnes = new Set();
+  const reColonne = new RegExp('(?:\\bWHERE\\b|\\bAND\\b|\\bOR\\b)\\s*(?:\\w+~)?([A-Za-z_]\\w*)\\s*' + OPS, 'gi');
+  let cm;
+  while ((cm = reColonne.exec(clause))) colonnes.add(cm[1].toLowerCase());
+
+  const litteral = x => /^'/.test(x) || /^[0-9]/.test(x) || /^@/.test(x);
+  const reOperande = new RegExp('(' + OPS + '\\s+)([^\\s()]+)', 'gi');
+  const echapper = (t, op, x) =>
+    (litteral(x) || colonnes.has(x.toLowerCase())) ? t : op + '@' + x;
+
+  // ><, =< et => sont refuses par le controle strict, comme dans les
+  // classes. Leur equivalent moderne dit la meme chose.
+  const moderne = t => t.replace(/><|=</g, m => m === '><' ? '<>' : '<=')
+                        .replace(/=>/g, '>=');
+
+  let dansWhere = false;
+  for (let i = 0; i < sorties.length; i++){
+    if (/^\*/.test(sorties[i])) continue;
+    const coupe = atcStripComment(sorties[i]);
+    if (!dansWhere && /\bWHERE\b/i.test(coupe.code)) dansWhere = true;
+    if (!dansWhere) continue;
+    reOperande.lastIndex = 0;
+    sorties[i] = moderne(coupe.code).replace(reOperande, echapper) + coupe.comment;
+  }
+
+  const marge = (brutes[0].match(/^\s*/) || [''])[0];
+
+  // Le point final cede la place a un blanc, pas au vide : sur une ligne
+  // commentee, le rogner collerait le code au guillemet.
+  const oterPoint = () => {
+    for (let j = sorties.length - 1; j >= 0; j--){
+      if (/^\*/.test(sorties[j])) continue;
+      const c2 = atcStripComment(sorties[j]);
+      if (!/\.\s*$/.test(c2.code.trimEnd())) continue;
+      const sansPoint = c2.code.replace(/\.(\s*)$/, ' $1');
+      sorties[j] = (c2.comment ? sansPoint : sansPoint.trimEnd()) + c2.comment;
+      return;
+    }
+  };
+
+  if (aInto){
+    // L'INTO deja ecrit passe en derniere clause. On ne le deplace que s'il
+    // tient sur une seule ligne : sinon on le signale, plutot que de
+    // recoller une clause a l'aveugle.
+    const SUITE = 'FROM|WHERE|GROUP\\s+BY|HAVING|ORDER\\s+BY|UP\\s+TO|FOR\\s+ALL\\s+ENTRIES|BYPASSING|CLIENT|CONNECTION';
+    let deplace = false;
+    for (let i = 0; i < sorties.length && !deplace; i++){
+      if (/^\*/.test(sorties[i])) continue;
+      const coupe = atcStripComment(sorties[i]);
+      const m = new RegExp('^(.*?)\\b((?:INTO|APPENDING)\\b.*?)(?:(\\s+(?:' + SUITE + ')\\b.*)|(\\s*\\.\\s*))?$', 'i')
+                  .exec(coupe.code);
+      if (!m || !m[2]) continue;
+
+      const avant = m[1] || '';
+      const apres = (m[3] || '') + (m[4] ? '.' : '');
+      const clauseInto = m[2].trim()
+        .replace(/(^|[\s(,])(?!@)([A-Za-z_][\w<>\-]*)/g,
+                 (t, sep, nom) => /^(INTO|APPENDING|CORRESPONDING|FIELDS|OF|TABLE)$/i.test(nom)
+                                    ? t : sep + '@' + nom);
+
+      const reste = (avant + apres).replace(/\s+$/, '');
+      if (reste.trim()) sorties[i] = reste + coupe.comment;
+      else sorties.splice(i, 1);
+      deplace = true;
+
+      oterPoint();
+      sorties.push(marge + '  ' + clauseInto + '.');
+    }
+    if (!deplace){
+      strictOk = false;
+      sorties.push(marge + '" INTO a placer en derniere clause : l\'acces a la vue CDS');
+      sorties.push(marge + '" impose le controle de syntaxe strict.');
+    }
+  } else {
+    // Pas d'INTO : c'etait la zone de travail de la table. Elle doit devenir
+    // explicite, et en CORRESPONDING FIELDS — la vue n'expose pas forcement
+    // exactement les memes champs.
+    oterPoint();
+    sorties.push(marge + '  ' + motCle('into corresponding fields of') + ' @' + zone + '.');
+  }
+
+  return {lignes: sorties, zone, motCle, aInto, strictOk};
+}
+
 function atcApplyRules(code, targets, ctx, lengths, prefix){
   // 1. WRITE: chaine (plusieurs "src TO dst" separes par des virgules)
   let m = /^WRITE\s*:\s*(.+)\.$/i.exec(code);
@@ -3386,29 +3553,15 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
   //    depuis v_konv ce serait celle de la vue.
   if (/^SELECT\b/i.test(code) && /\bFROM\s+KONV\b/i.test(code) && ctx && ctx.stmts){
     const brutes = ctx.stmts[ctx.index].lines;
-    const sorties = brutes.slice();
 
-    // Le nom de la table, dans sa casse d'origine : il sert aussi de nom de
-    // zone de travail, celle que TABLES konv a declaree.
-    const zone = /\bFROM\s+(KONV)\b/i.exec(code)[1];
-
-    // Les mots-cles ajoutes suivent la casse des mots-cles du source, pas
-    // celle du nom de table : « SELECT * FROM konv » melange les deux. Le
-    // temoin se lit une fois, la regle appelle motCle une dizaine de fois.
-    const temoin = /\b(FROM)\s+KONV\b/i.exec(code)[1];
-    const motCle = t => matchCase(temoin, t);
-
-    let iFrom = -1;
-    for (let i = 0; i < sorties.length; i++){
-      if (/^\*/.test(sorties[i])) continue;
-      const coupe = atcStripComment(sorties[i]);
-      if (!/\bFROM\s+KONV\b/i.test(coupe.code)) continue;
-      sorties[i] = coupe.code.replace(/(\bFROM\s+)(KONV)\b/i,
-                     (t, avant, nom) => avant + matchCase(nom, 'v_konv')) + coupe.comment;
-      iFrom = i;
-      break;
-    }
-    if (iFrom < 0) return null;
+    // Le nom de la table, la syntaxe stricte et l'INTO explicite : c'est le
+    // meme travail pour toutes les tables videes au profit d'une vue CDS.
+    const vue = reecrireVersVueCds(brutes, code, 'KONV', 'v_konv');
+    if (!vue) return null;
+    const sorties = vue.lignes;
+    const zone = vue.zone;
+    const motCle = vue.motCle;
+    const aInto = vue.aInto;
 
     // Un nom libre : le programme colle peut deja porter lt_konv.
     const pris = new Set();
@@ -3422,127 +3575,6 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
       // heurte pas la zone de travail konv.
       const reSym = /<[A-Za-z_][A-Za-z0-9_]*>/g;
       while ((t = reSym.exec(texte))) symboles.add(t[0].toLowerCase());
-    }
-
-    const aInto = /\bINTO\b|\bAPPENDING\b/i.test(code);
-
-    // Le controle de syntaxe strict, impose par l'acces a une entite CDS
-    // (7.40 SP05) : toutes les variables hote echappees, et l'INTO en
-    // derniere clause. Cela vaut pour l'instruction entiere, INTO deja
-    // ecrit compris — ce n'est pas un choix de mise en forme.
-    let strictOk = true;
-
-    {
-      const ouWhere = code.search(/\bWHERE\b/i);
-      const clause = ouWhere >= 0 ? code.slice(ouWhere) : '';
-      const OPS = '(?:=|<>|><|>=|=<|<=|=>|>|<|\\bEQ\\b|\\bNE\\b|\\bGE\\b|\\bLE\\b|\\bGT\\b|\\bLT\\b|\\bLIKE\\b|\\bIN\\b)';
-
-      // Une colonne est un nom cite a gauche d'une comparaison : c'est la
-      // seule facon pour un operande de droite de ne pas etre une variable.
-      const colonnes = new Set();
-      const reColonne = new RegExp('(?:\\bWHERE\\b|\\bAND\\b|\\bOR\\b)\\s*(?:\\w+~)?([A-Za-z_]\\w*)\\s*' + OPS, 'gi');
-      let cm;
-      while ((cm = reColonne.exec(clause))) colonnes.add(cm[1].toLowerCase());
-
-      const litteral = x => /^'/.test(x) || /^[0-9]/.test(x) || /^@/.test(x);
-      const reOperande = new RegExp('(' + OPS + '\\s+)([^\\s()]+)', 'gi');
-      const echapper = (t, op, x) =>
-        (litteral(x) || colonnes.has(x.toLowerCase())) ? t : op + '@' + x;
-
-      // ><, =< et => sont refuses par le controle strict, comme dans les
-      // classes. Leur equivalent moderne dit la meme chose.
-      const moderne = t => t.replace(/><|=</g, m => m === '><' ? '<>' : '<=')
-                            .replace(/=>/g, '>=');
-
-      let dansWhere = false;
-      for (let i = 0; i < sorties.length; i++){
-        if (/^\*/.test(sorties[i])) continue;
-        const coupe = atcStripComment(sorties[i]);
-        if (!dansWhere && /\bWHERE\b/i.test(coupe.code)) dansWhere = true;
-        if (!dansWhere) continue;
-        reOperande.lastIndex = 0;
-        sorties[i] = moderne(coupe.code).replace(reOperande, echapper) + coupe.comment;
-      }
-
-      // L'INTO deja ecrit doit passer en derniere clause. On ne le deplace
-      // que s'il tient sur une seule ligne : sinon on le signale, plutot que
-      // de recoller une clause a l'aveugle.
-      if (aInto){
-        const SUITE = 'FROM|WHERE|GROUP\\s+BY|HAVING|ORDER\\s+BY|UP\\s+TO|FOR\\s+ALL\\s+ENTRIES|BYPASSING|CLIENT|CONNECTION';
-        let deplace = false;
-        for (let i = 0; i < sorties.length && !deplace; i++){
-          if (/^\*/.test(sorties[i])) continue;
-          const coupe = atcStripComment(sorties[i]);
-          const m = new RegExp('^(.*?)\\b((?:INTO|APPENDING)\\b.*?)(?:(\\s+(?:' + SUITE + ')\\b.*)|(\\s*\\.\\s*))?$', 'i')
-                      .exec(coupe.code);
-          if (!m || !m[2]) continue;
-
-          const avant = m[1] || '';
-          const apres = (m[3] || '') + (m[4] ? '.' : '');
-          const clauseInto = m[2].trim()
-            .replace(/(\b(?:INTO|APPENDING)\b(?:\s+(?:CORRESPONDING\s+FIELDS\s+OF)?\s*(?:TABLE)?\s*)?)/i, '$1')
-            .replace(/(^|[\s(,])(?!@)([A-Za-z_][\w<>\-]*)/g,
-                     (t, sep, nom) => /^(INTO|APPENDING|CORRESPONDING|FIELDS|OF|TABLE)$/i.test(nom)
-                                        ? t : sep + '@' + nom);
-
-          const reste = (avant + apres).replace(/\s+$/, '');
-          if (reste.trim()) sorties[i] = reste + coupe.comment;
-          else sorties.splice(i, 1);
-          deplace = true;
-
-          // Le point final cede la place a un blanc, pas au vide : sur une
-          // ligne commentee, le rogner collerait le code au guillemet.
-          for (let j = sorties.length - 1; j >= 0; j--){
-            if (/^\*/.test(sorties[j])) continue;
-            const c2 = atcStripComment(sorties[j]);
-            if (!/\.\s*$/.test(c2.code.trimEnd())) continue;
-            const sansPoint = c2.code.replace(/\.(\s*)$/, ' $1');
-            sorties[j] = (c2.comment ? sansPoint : sansPoint.trimEnd()) + c2.comment;
-            break;
-          }
-          const marge2 = (brutes[0].match(/^\s*/) || [''])[0];
-          sorties.push(marge2 + '  ' + clauseInto + '.');
-        }
-        if (!deplace){
-          strictOk = false;
-          sorties.push((brutes[0].match(/^\s*/) || [''])[0]
-            + '" INTO a placer en derniere clause : l\'acces a la vue CDS');
-          sorties.push((brutes[0].match(/^\s*/) || [''])[0]
-            + '" impose le controle de syntaxe strict.');
-        }
-      }
-    }
-
-    if (!aInto){
-      // Rendre l'INTO explicite, en syntaxe stricte.
-      //
-      // « SELECT * FROM konv » remplissait la zone de travail de la table ;
-      // depuis v_konv, ce serait celle de la vue. L'INTO doit donc devenir
-      // explicite, et en CORRESPONDING FIELDS : la vue n'expose pas
-      // forcement exactement la meme liste de champs.
-      //
-      // Et V_KONV est une vue CDS : son acces reclame le controle de syntaxe
-      // strict, donc toutes les variables hote echappees et l'INTO en
-      // derniere clause. Les lignes du WHERE changent pour cela seul — c'est
-      // le prix de la vue, pas un choix de mise en forme.
-      //
-      // L'echappement a deja eu lieu plus haut : il vaut pour l'instruction
-      // entiere. Il ne reste qu'a poser l'INTO manquant, en derniere clause.
-      for (let i = sorties.length - 1; i >= 0; i--){
-        if (/^\*/.test(sorties[i])) continue;
-        const coupe = atcStripComment(sorties[i]);
-        if (!/\.\s*$/.test(coupe.code.trimEnd())) continue;
-        // Le point cede la place a un blanc, pas au vide : sur une ligne
-        // commentee, le rogner collerait le code au guillemet et decalerait
-        // le commentaire de toutes les lignes voisines.
-        const sansPoint = coupe.code.replace(/\.(\s*)$/, ' $1');
-        sorties[i] = (coupe.comment ? sansPoint : sansPoint.trimEnd()) + coupe.comment;
-        break;
-      }
-
-      const marge = (brutes[0].match(/^\s*/) || [''])[0];
-      sorties.push(marge + '  ' + motCle('into corresponding fields of')
-                          + ' @' + zone + '.');
     }
 
     // Ce que le SELECT alimentait, pour savoir quoi lui rendre : une table,
@@ -3830,6 +3862,60 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     const mot = ATC_ENDSELECT_KONV.get(ctx.index);
     return {rule: 'SELECT sur KONV',
             lines: [code.replace(/\bENDSELECT\b/i, m => matchCase(m, mot))]};
+  }
+
+  // 12d. Statut des documents SD : VBUK et VBUP sont vides (note 2198647).
+  //
+  //    Les valeurs de statut sont passees dans les tables de document
+  //    elles-memes : VBUK vers VBAK, LIKP et VBRK ; VBUP vers VBAP et LIPS.
+  //    Les deux tables restent au dictionnaire pour le typage, mais un
+  //    SELECT dessus ne ramene plus rien. SAP livre les vues CDS
+  //    V_VBUK_CDS et V_VBUP_CDS, de structure identique.
+  //
+  //    Pourquoi la vue, et pas mieux. Le cookbook classe les adaptations de
+  //    la meilleure a la moins bonne : reprendre les donnees deja lues du
+  //    document, basculer sur la table de document quand son type est connu,
+  //    passer par SD_VBUK_READ_FROM_DOC sinon — et, en dernier, la vue, dont
+  //    il dit lui-meme qu'elle n'est pas la methode recommandee. Les trois
+  //    premieres demandent de savoir ce que le programme fait autour ; la
+  //    quatrieme se deduit de l'instruction seule. C'est donc celle que
+  //    l'outil ecrit, en nommant les autres.
+  //
+  //    Ecritures exclues : le cookbook demande de les retirer, pas de les
+  //    rediriger — une vue ne s'ecrit pas, et les statuts s'alimentent
+  //    desormais avec le document lui-meme.
+  const mStatut = /^SELECT\b[\s\S]*?\bFROM\s+(VBUK|VBUP)\b/i.exec(code);
+  if (mStatut && ctx && ctx.stmts){
+    const source = mStatut[1].toUpperCase();
+    const vueStatut = reecrireVersVueCds(ctx.stmts[ctx.index].lines, code,
+                                         source, 'v_' + source.toLowerCase() + '_cds');
+    if (!vueStatut) return null;
+
+    const entete = source === 'VBUK';
+    return {rule: 'SELECT sur ' + source, enPlace: true, lines: vueStatut.lignes,
+            complement: {
+              titre: 'La vue est la voie de repli, pas celle que SAP recommande',
+              aCreer: 'Le cookbook de la note 2198647 range les adaptations par ordre de '
+                    + 'préférence, et la vue vient en dernier. Regardez d’abord si le '
+                    + 'programme a déjà lu le document : le statut y est désormais, '
+                    + (entete
+                        ? 'dans VBAK, LIKP ou VBRK selon le type. '
+                        : 'dans VBAP ou LIPS selon le type. ')
+                    + 'Si le type de document est connu à cet endroit, sélectionnez '
+                    + 'directement cette table. S’il ne l’est pas, '
+                    + (entete
+                        ? 'SD_VBUK_READ_FROM_DOC (ou _MULTI pour plusieurs documents) '
+                        : 'SD_VBUP_READ_FROM_DOC (ou _MULTI pour plusieurs documents) ')
+                    + 'lit toutes les tables et reste à jour.'
+                    + (entete
+                        ? ' Et si vous gardez la vue : précisez VBOBJ dans le WHERE. '
+                          + 'V_VBUK_CDS est une union de VBAK, LIKP et VBRK — sans ce '
+                          + 'filtre, un même n° de document peut répondre plusieurs '
+                          + 'fois. VBOBJ vaut A pour une vente, L pour une livraison, '
+                          + 'F pour une facture ; il n’existe dans aucune des trois '
+                          + 'tables de document, seule la vue le reconstitue.'
+                        : '')
+            }};
   }
 
   // 13. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.

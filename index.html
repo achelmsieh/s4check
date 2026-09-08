@@ -3424,9 +3424,39 @@ function atcApplyRules(code, targets, ctx, lengths, prefix){
     // Alternative de la note elle-meme : pour une lecture simple, le
     // cookbook deconseille la vue et renvoie a l'API — PRCD_ELEMENTS est une
     // table transparente, le buffer des tables cluster n'existe plus.
+    //
+    // L'API rend une TABLE. Quand le SELECT ecrivait dans une zone de
+    // travail, il n'y a donc pas de cible a reprendre : on nomme une table a
+    // declarer, et on le dit. Ecrire « et_prc_element_classic_format = konv »
+    // ne compilerait pas.
     const mKnumv = /\bKNUMV\s*=\s*@?([^\s.]+)/i.exec(code);
     const mCible = /\b(?:INTO\s+TABLE|APPENDING\s+TABLE)\s+@?([\w<>\-]+)/i.exec(code);
-    const cible = mCible ? mCible[1] : zone;
+    const cible = mCible ? mCible[1] : 'lt_' + zone.toLowerCase();
+    const boucle = !aInto && !/\bSELECT\s+SINGLE\b/i.test(code);
+
+    // Meme convention que le reste de l'onglet : l'original est conserve en
+    // commentaire au-dessus du code propose. Le bloc se colle tel quel.
+    const opts = atcOptions();
+    const marque = opts.marker || 'COD001';
+    const sceau = (opts.author || 'AEH') + '_' + opts.date + '_ATC';
+    const marge = (brutes[0].match(/^\s*/) || [''])[0];
+
+    const api = [
+      marge + 'TRY.',
+      marge + '    cl_prc_result_factory=>get_instance( )->get_prc_result( )->get_price_element_db_by_key(',
+      marge + '      EXPORTING iv_knumv                      = '
+            + (mKnumv ? mKnumv[1] : 'komk-knumv'),
+      marge + '      IMPORTING et_prc_element_classic_format = ' + cible + ' ).',
+      marge + '  CATCH cx_prc_result.',
+      marge + '    " traitement d’erreur à écrire',
+      marge + 'ENDTRY.'
+    ];
+
+    const bloc = [`*<<${marque}- ${sceau}`]
+      .concat(brutes.map(l => '*' + l))
+      .concat([`*${marque}->>`, `*<<${marque}+ ${sceau}`])
+      .concat(api)
+      .concat([`*${marque}+>>`]);
 
     return {rule: 'SELECT sur KONV', enPlace: true, lines: sorties,
             complement: {
@@ -3435,17 +3465,14 @@ function atcApplyRules(code, targets, ctx, lengths, prefix){
                     + 'complexes et aux vues CDS. Pour une lecture qui se résume au '
                     + 'numéro de document de tarification, il recommande l’API : '
                     + 'PRCD_ELEMENTS est une table transparente, le buffer des tables '
-                    + 'cluster n’existe plus.',
-              code: [
-                'TRY.',
-                '    cl_prc_result_factory=>get_instance( )->get_prc_result( )->get_price_element_db_by_key(',
-                '      EXPORTING iv_knumv                      = '
-                  + (mKnumv ? mKnumv[1] : 'komk-knumv'),
-                '      IMPORTING et_prc_element_classic_format = ' + cible + ' ).',
-                '  CATCH cx_prc_result.',
-                '    " traitement d’erreur à écrire',
-                'ENDTRY.'
-              ].join('\n')
+                    + 'cluster n’existe plus. Ce bloc remplace le SELECT, original '
+                    + 'commenté compris.'
+                    + (mCible ? '' : ' L’API rend une table : déclarez ' + cible
+                        + ' TYPE STANDARD TABLE OF ' + zone.toLowerCase() + '.')
+                    + (boucle ? ' Le SELECT … ENDSELECT devient alors un LOOP AT '
+                        + cible + ', la zone de travail ' + zone + ' étant remplie '
+                        + 'ligne à ligne.' : ''),
+              code: bloc.join('\n')
             }};
   }
 

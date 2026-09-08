@@ -3463,9 +3463,53 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     // travail, il n'y a donc pas de cible a reprendre : on nomme une table a
     // declarer, et on le dit. Ecrire « et_prc_element_classic_format = konv »
     // ne compilerait pas.
-    const mCible = /\b(?:INTO\s+TABLE|APPENDING\s+TABLE)\s+@?([\w<>\-]+)/i.exec(code);
-    const cible = mCible ? mCible[1] : 'lt_' + zone.toLowerCase();
-    const boucle = !aInto && !/\bSELECT\s+SINGLE\b/i.test(code);
+    // Ou l'API doit ecrire, et comment raccorder la suite du code.
+    //
+    // Un seul cas se branche directement : INTO TABLE d'une table deja
+    // typee KONV. Partout ailleurs — zone de travail implicite, INTO
+    // CORRESPONDING FIELDS, APPENDING — la cible de l'appel ne peut pas
+    // etre celle du SELECT : l'API rend une table de KONV, et rien d'autre.
+    // Il faut donc une table intermediaire, la declarer, et rendre a la
+    // suite du programme ce qu'elle attendait.
+    const mTable = /\bINTO\s+TABLE\s+@?([\w<>\-]+)/i.exec(code);
+    const mAppend = /\bAPPENDING\s+(?:CORRESPONDING\s+FIELDS\s+OF\s+)?TABLE\s+@?([\w<>\-]+)/i.exec(code);
+    const mCorrTable = /\bINTO\s+CORRESPONDING\s+FIELDS\s+OF\s+TABLE\s+@?([\w<>\-]+)/i.exec(code);
+    const mZone = /\bINTO\s+(?:CORRESPONDING\s+FIELDS\s+OF\s+)?@?([\w<>\-]+)/i.exec(code);
+    const unique = /\bSELECT\s+SINGLE\b/i.test(code);
+
+    // Un nom libre : le programme colle peut deja porter lt_konv.
+    const pris = new Set();
+    for (const st of ctx.stmts){
+      const re = /[A-Za-z_][A-Za-z0-9_]*/g;
+      let t;
+      while ((t = re.exec(atcStmtCode(st)))) pris.add(t[0].toLowerCase());
+    }
+    let table = 'lt_' + zone.toLowerCase();
+    for (let i = 2; pris.has(table.toLowerCase()); i++) table = 'lt_' + zone.toLowerCase() + i;
+
+    // Cible directe, sinon table intermediaire.
+    const direct = !!mTable && !mCorrTable;
+    const cible = direct ? mTable[1] : table;
+
+    // La ligne qui rend a la suite du programme ce que le SELECT lui donnait.
+    const recue = (!aInto ? zone : (mZone && !mTable && !mAppend ? mZone[1] : ''));
+    let raccord = '';
+    if (direct){
+      raccord = '';
+    } else if (mCorrTable){
+      raccord = motCle('move-corresponding') + ' ' + table + '[] '
+              + motCle('to') + ' ' + mCorrTable[1] + '[].';
+    } else if (mAppend){
+      raccord = motCle('append lines of') + ' ' + table + ' '
+              + motCle('to') + ' ' + mAppend[1] + '.';
+    } else if (unique){
+      raccord = motCle('read table') + ' ' + table + ' ' + motCle('into') + ' '
+              + (recue || zone) + ' ' + motCle('index') + ' 1.';
+    } else {
+      raccord = motCle('loop at') + ' ' + table + ' ' + motCle('into') + ' '
+              + (recue || zone) + '.';
+    }
+    const boucle = !direct && !mCorrTable && !mAppend && !unique;
 
     // Toute la restriction doit passer dans l'appel, pas seulement le numero
     // de document : un WHERE sur KNUMV et KPOSN qui ne rendrait que KNUMV
@@ -3524,6 +3568,18 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
       api.push(marge + '    " traitement d’erreur à écrire');
       api.push(marge + 'ENDTRY.');
 
+      // La table intermediaire est declaree dans le bloc : sans cela, le
+      // code propose reference un nom qui n'existe nulle part.
+      if (!direct){
+        api.unshift('');
+        api.unshift(marge + motCle('data') + ' ' + table + ' '
+                    + motCle('type standard table of') + ' ' + zone + '.');
+      }
+      if (raccord){
+        api.push('');
+        api.push(marge + raccord);
+      }
+
       complement = {
         titre: surCle
           ? 'Pour une lecture sur la clé, SAP renvoie à l’API'
@@ -3542,11 +3598,13 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
               + ' La sortie choisie est ' + sortie + ', au format KONV ; '
               + 'et_prc_element rendrait le format PRCD_ELEMENTS, et les variantes '
               + 'DRAFT visent PRCD_ELEM_DRAFT.'
-              + (mCible ? '' : ' Déclarez ' + cible + ' TYPE STANDARD TABLE OF '
-                  + zone.toLowerCase() + ' : l’API rend une table.')
-              + (boucle ? ' Le SELECT … ENDSELECT devient un LOOP AT ' + cible
-                  + ', la zone de travail ' + zone + ' étant remplie ligne à ligne.'
-                  : '')
+              + (direct ? ''
+                  : ' L’API rend une table de ' + zone.toUpperCase() + ' et rien '
+                    + 'd’autre : le bloc déclare ' + table + ', puis rend à la suite '
+                    + 'du programme ce que le SELECT lui donnait.')
+              + (boucle ? ' Le ENDSELECT devient ENDLOOP ; la zone de travail '
+                  + zone + ' est remplie ligne à ligne comme avant, le corps de '
+                  + 'boucle n’a donc pas à changer.' : '')
       };
       complement.code = [`*<<${marque}- ${sceau}`]
         .concat(brutes.map(l => '*' + l))

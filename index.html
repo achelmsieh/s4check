@@ -3337,7 +3337,10 @@ function egalitesDuWhere(code){
 
   const out = [];
   for (const part of clause.split(/\bAND\b/i)){
-    const m = /^\s*(?:\w+~)?([A-Za-z_]\w*)\s*=\s*(\S+)\s*$/.exec(part);
+    // EQ et = sont le meme operateur. Ni l'un ni l'autre n'est obsolete :
+    // seules les formes courtes ><, =< et => le sont.
+    const m = /^\s*(?:\w+~)?([A-Za-z_]\w*)\s*=\s*(\S+)\s*$/
+                .exec(part.replace(/\s+EQ\s+/i, ' = '));
     if (!m) return null;
     out.push({champ: m[1].toUpperCase(), valeur: m[2].replace(/^@/, '')});
   }
@@ -3400,6 +3403,20 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     }
     if (iFrom < 0) return null;
 
+    // Un nom libre : le programme colle peut deja porter lt_konv.
+    const pris = new Set();
+    const symboles = new Set();
+    for (const st of ctx.stmts){
+      const texte = atcStmtCode(st);
+      const re = /[A-Za-z_][A-Za-z0-9_]*/g;
+      let t;
+      while ((t = re.exec(texte))) pris.add(t[0].toLowerCase());
+      // Les symboles de champ forment un espace de noms a part : <konv> ne
+      // heurte pas la zone de travail konv.
+      const reSym = /<[A-Za-z_][A-Za-z0-9_]*>/g;
+      while ((t = reSym.exec(texte))) symboles.add(t[0].toLowerCase());
+    }
+
     const aInto = /\bINTO\b|\bAPPENDING\b/i.test(code);
     let forme = 'nom seul';
 
@@ -3417,7 +3434,12 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
       const tousSurs = operandes.every(x => litteral(x) || sure(x));
       const dejaStrict = code.includes('@');
 
-      if (tousSurs || dejaStrict){
+      // ><, =< et => sont les seules formes obsoletes, et la syntaxe stricte
+      // les refuse — comme les classes. Poser un @ a cote ferait echouer la
+      // syntaxe. EQ, NE, LT, GT, LE et GE, eux, restent recevables.
+      const formeCourte = /><|=<|=>/.test(clause);
+
+      if ((tousSurs || dejaStrict) && !formeCourte){
         forme = 'stricte';
 
         // Echappement, a partir de la ligne du WHERE seulement : les
@@ -3443,9 +3465,41 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
           break;
         }
 
+        // INTO CORRESPONDING FIELDS n'initialise pas sa cible : seuls les
+        // champs de meme nom sont affectes, les autres gardent ce qu'ils
+        // avaient. Le SELECT d'origine, lui, remplissait toute la zone a
+        // chaque ligne. Or la vue ne rend pas tout KONV — WEGXX, STUFE et
+        // KOLNR3 ne sont plus stockes — donc ces champs traineraient la
+        // valeur du tour precedent, en silence, et partiraient telles quelles
+        // dans le MOVE-CORRESPONDING suivant.
+        //
+        // On passe donc par la ligne de la vue, puis CLEAR et report champ par
+        // champ : la meme forme que le bloc API, pour la meme raison.
+        let lsVue = 'ls_v_' + zone.toLowerCase();
+        for (let i = 2; pris.has(lsVue.toLowerCase()); i++){
+          lsVue = 'ls_v_' + zone.toLowerCase() + i;
+        }
+
         const marge = (brutes[0].match(/^\s*/) || [''])[0];
-        sorties.push(marge + '  ' + motCle('into corresponding fields of')
-                            + ' @' + zone + '.');
+        const dedans = marge + '  ';
+        const report = [
+          dedans + motCle('clear') + ' ' + zone + '.',
+          dedans + motCle('move-corresponding') + ' ' + lsVue + ' '
+                 + motCle('to') + ' ' + zone + '.'
+        ];
+
+        sorties.push(dedans + motCle('into') + ' @' + motCle('data') + '(' + lsVue + ').');
+        if (/\bSELECT\s+SINGLE\b/i.test(code)){
+          // SELECT SINGLE alimentait sy-subrc : la reprise reste sous
+          // condition, comme l'etait l'usage de la zone de travail.
+          sorties.push(marge + motCle('if') + ' sy-subrc = 0.');
+          sorties.push('  ' + report[0]);
+          sorties.push('  ' + report[1]);
+          sorties.push(marge + motCle('endif') + '.');
+        } else {
+          sorties.push(report[0]);
+          sorties.push(report[1]);
+        }
       } else {
         forme = 'classique';
         const coupe = atcStripComment(sorties[iFrom]);
@@ -3477,19 +3531,6 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     const mZone = /\bINTO\s+(?:CORRESPONDING\s+FIELDS\s+OF\s+)?@?([\w<>\-]+)/i.exec(code);
     const unique = /\bSELECT\s+SINGLE\b/i.test(code);
 
-    // Un nom libre : le programme colle peut deja porter lt_konv.
-    const pris = new Set();
-    const symboles = new Set();
-    for (const st of ctx.stmts){
-      const texte = atcStmtCode(st);
-      const re = /[A-Za-z_][A-Za-z0-9_]*/g;
-      let t;
-      while ((t = re.exec(texte))) pris.add(t[0].toLowerCase());
-      // Les symboles de champ forment un espace de noms a part : <konv> ne
-      // heurte pas la zone de travail konv.
-      const reSym = /<[A-Za-z_][A-Za-z0-9_]*>/g;
-      while ((t = reSym.exec(texte))) symboles.add(t[0].toLowerCase());
-    }
     let table = 'lt_' + zone.toLowerCase();
     for (let i = 2; pris.has(table.toLowerCase()); i++) table = 'lt_' + zone.toLowerCase() + i;
 

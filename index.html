@@ -305,6 +305,8 @@ mark.partial-2438006{background:transparent;color:var(--fmod);text-decoration:un
 .atcNoteHead.fmod .id{color:var(--fmod)}
 .atcPick input{width:15px;height:15px;margin:0;cursor:pointer;accent-color:var(--fix);flex:none}
 .atcItem{transition:opacity .15s ease}
+.atcItem .atcCopie{float:right;margin:-1px 0 0 8px;font-size:11px;padding:3px 9px}
+.atcItem.off .atcCopie{display:none}
 .atcItem.off{opacity:.42}
 .atcItem.off .add{background:transparent;color:var(--ink-faint);font-weight:400}
 .atcItem.off .del{background:transparent;color:var(--ink-faint);text-decoration:none}
@@ -3650,14 +3652,30 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
             + 'n’initialise pas sa cible, donc si la vue n’expose pas tout KONV — '
             + 'WEGXX, STUFE et KOLNR3 ne sont plus stockés — ces champs garderaient '
             + 'la valeur du tour précédent.',
+      // Deux choses a rendre ici.
+      //
       // La conversion a change le ENDSELECT en ENDLOOP : livrer le seul SELECT
-      // laisserait la boucle sans fermeture. L'alternative reprend donc le bloc
-      // entier, corps et ENDSELECT compris, et se colle a la place.
-      code: (boucle && finBoucle >= 0
-              ? sorties.concat(
-                  ctx.stmts.slice(ctx.index + 1, finBoucle + 1)
-                           .reduce((a, st) => a.concat(st.lines), []))
-              : sorties).join('\n')
+      // laisserait la boucle sans fermeture. L'alternative reprend donc le
+      // bloc entier, corps et ENDSELECT compris.
+      //
+      // Et comme toute proposition de l'outil, elle conserve l'original en
+      // commentaire au-dessus : c'est la convention de l'equipe, et elle ne
+      // souffre pas d'exception parce qu'il s'agit d'une alternative.
+      code: (() => {
+        const suite = (boucle && finBoucle >= 0)
+          ? ctx.stmts.slice(ctx.index + 1, finBoucle + 1)
+                     .reduce((a, st) => a.concat(st.lines), [])
+          : [];
+        const opts = atcOptions();
+        const marque = opts.marker || 'COD001';
+        const sceau = (opts.author || 'AEH') + '_' + opts.date + '_ATC';
+        return [`*<<${marque}- ${sceau}`]
+          .concat(brutes.concat(suite).map(l => '*' + l))
+          .concat([`*${marque}->>`, `*<<${marque}+ ${sceau}`])
+          .concat(sorties.concat(suite))
+          .concat([`*${marque}+>>`])
+          .join('\n');
+      })()
     };
 
     // Le ENDSELECT de cette boucle devra devenir ENDLOOP. C'est le moteur qui
@@ -3811,6 +3829,11 @@ function atcConvert(code, opts, disabled){
     // Conversion retenue : ce qu'elle entraine ailleurs peut etre enregistre.
     if (typeof res.ferme === 'number' && res.ferme >= 0) ATC_ENDSELECT_KONV.add(res.ferme);
 
+    // Ou commence ce que cette conversion ecrit : le bloc en est extrait pour
+    // que la proposition porte son propre bouton de copie. Sans lui, il
+    // fallait copier tout le source converti pour recuperer une correction.
+    const debutBloc = out.length;
+
     const indent = (stmt.lines[0].match(/^\s*/) || [''])[0];
 
     // Reecriture sur place : la regle a repris les lignes du source et n'en a
@@ -3845,7 +3868,8 @@ function atcConvert(code, opts, disabled){
         champs: res.champs || null,
         before: stmt.lines.filter((l, i) => l !== res.lines[i]).map(l => l.trim()).join(' '),
         after: res.lines.filter((l, i) => l !== stmt.lines[i]).map(l => l.trim()).join(' '),
-        complement: res.complement || null
+        complement: res.complement || null,
+        bloc: out.slice(debutBloc).join('\n')
       });
       continue;
     }
@@ -3874,7 +3898,8 @@ function atcConvert(code, opts, disabled){
       champs: res.champs || null,
       complement: res.complement || null,
       before: stmt.lines.map(l => l.trim()).join(' '),
-      after: res.lines.join(' ')
+      after: res.lines.join(' '),
+      bloc: out.slice(debutBloc).join('\n')
     });
   }
 
@@ -3930,6 +3955,20 @@ function complementHtml(c){
     + '<button class="btn" data-fixcopy="' + id + '">Copier</button></div>'
     + '<span class="cplCreer">' + esc(c.complement.aCreer) + '</span>'
     + '<pre class="cplCode">' + esc(c.complement.code) + '</pre></div>';
+}
+
+/**
+ * Bouton de copie de la seule correction affichee.
+ *
+ * <p>Le bouton d'en-tete copie tout le source converti — pratique pour un
+ * remplacement en bloc, inutile quand on reprend une correction a la fois.
+ * Celui-ci rend l'original commente et le code propose, prets a coller.
+ */
+function blocCopieHtml(c){
+  if (!c.applied || !c.bloc) return '';
+  const id = 'blc' + (++fixSeq);
+  PENDING_FIX.set(id, c.bloc);
+  return '<button class="btn atcCopie" data-fixcopy="' + id + '">Copier cette correction</button>';
 }
 
 function longueursHtml(c){
@@ -4100,6 +4139,7 @@ function renderAtc(){
         + '<input type="checkbox" data-key="' + c.key + '"' + (c.applied ? ' checked' : '') + '>'
         + '<span class="atcNum">l.' + c.line + '</span>'
         + '<span class="atcRule">' + esc(c.rule) + '</span></label>'
+        + blocCopieHtml(c)
         + '<div class="fixLine" style="margin-top:4px"><span class="del">' + esc(c.before) + '</span></div>'
         + '<div class="fixLine" style="margin-top:2px"><span class="add">' + esc(c.after) + '</span></div>'
         + longueursHtml(c) + complementHtml(c) + '</li>';

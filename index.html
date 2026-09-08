@@ -2964,11 +2964,13 @@ function atcNoteOfChange(res){
    meme nom. Remise a zero au debut de chaque conversion. */
 let atcVarSeq = 0;
 
-/* Les ENDSELECT dont le SELECT est passe a l'API, donc a fermer en ENDLOOP.
-   Rempli quand le SELECT est converti, lu quand la boucle du moteur atteint
-   la fermeture — les instructions defilent dans l'ordre. Remis a zero au
-   debut de chaque conversion, comme le compteur ci-dessus. */
-const ATC_ENDSELECT_KONV = new Set();
+/* Les ENDSELECT dont le SELECT est passe a l'API, avec le mot qui les
+   remplace : ENDLOOP quand une boucle prend le relais, ENDIF quand le
+   SELECT ne ramenait qu'une ligne (UP TO 1 ROWS) et devient un READ TABLE
+   sous condition. Rempli quand le SELECT est converti, lu quand la boucle du
+   moteur atteint la fermeture — les instructions defilent dans l'ordre.
+   Remis a zero au debut de chaque conversion, comme le compteur ci-dessus. */
+const ATC_ENDSELECT_KONV = new Map();
 
 /* Suffixe ALPHA, si l'option est active et la source est un article. */
 function atcAlphaOf(src){
@@ -3549,6 +3551,15 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     const mAppend = /\bAPPENDING\s+(?:CORRESPONDING\s+FIELDS\s+OF\s+)?TABLE\s+@?([\w<>\-]+)/i.exec(code);
     const mCorrTable = /\bINTO\s+CORRESPONDING\s+FIELDS\s+OF\s+TABLE\s+@?([\w<>\-]+)/i.exec(code);
     const mZone = /\bINTO\s+(?:CORRESPONDING\s+FIELDS\s+OF\s+)?@?([\w<>\-]+)/i.exec(code);
+    // UP TO n ROWS bornait la lecture ; l'API, elle, rend tout. Le nombre
+    // doit donc reparaitre du cote ABAP, sans quoi la boucle tournerait sur
+    // des lignes que le SELECT n'aurait jamais vues.
+    const mUpTo = /\bUP\s+TO\s+(\S+)\s+ROWS\b/i.exec(code);
+    const combien = mUpTo ? mUpTo[1].replace(/^@/, '') : '';
+    const unSeul = /\bSELECT\s+SINGLE\b/i.test(code) || combien === '1';
+
+    // SELECT SINGLE n'a pas de ENDSELECT ; UP TO 1 ROWS en a un, et il
+    // devient ENDIF puisque la lecture unique passe sous condition.
     const unique = /\bSELECT\s+SINGLE\b/i.test(code);
 
     let table = 'lt_' + zone.toLowerCase();
@@ -3636,22 +3647,28 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
       raccord = [motCle('move-corresponding') + ' ' + table + '[] '
                + motCle('to') + ' ' + mAppend[1] + '[] '
                + motCle('keeping target lines') + '.'];
-    } else if (unique){
-      // SELECT SINGLE alimentait sy-subrc : le READ TABLE le refait, et la
-      // reprise reste sous condition.
+    } else if (unSeul){
+      // Une seule ligne lue : READ TABLE, et la reprise sous condition —
+      // SELECT SINGLE comme UP TO 1 ROWS alimentaient sy-subrc.
       raccord = [
         motCle('read table') + ' ' + table + ' ' + motCle('assigning field-symbol')
           + '(' + symbole + ') ' + motCle('index') + ' 1.',
         motCle('if') + ' sy-subrc = 0.'
-      ].concat(report.map(l => '  ' + l))
-       .concat([motCle('endif') + '.']);
+      ].concat(report.map(l => '  ' + l));
+      // SELECT SINGLE n'avait pas de ENDSELECT a recycler : le ENDIF se pose
+      // ici. UP TO 1 ROWS en a un, qui devient le ENDIF.
+      if (unique) raccord = raccord.concat([motCle('endif') + '.']);
     } else {
       raccord = [
         motCle('loop at') + ' ' + table + ' ' + motCle('assigning field-symbol')
-          + '(' + symbole + ').'
+          + '(' + symbole + ')'
+          // UP TO n ROWS : la boucle s'arrete ou le SELECT s'arretait.
+          + (combien ? ' ' + motCle('from') + ' 1 ' + motCle('to') + ' ' + combien : '')
+          + '.'
       ].concat(report.map(l => '  ' + l));
     }
     const boucle = !versTable && !mAppend && !unique;
+    const motFin = unSeul ? 'endif' : 'endloop';
 
     // Quelle voie prendre.
     //
@@ -3800,7 +3817,7 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     // laisserait sinon un ENDLOOP sans LOOP. Le corps, lui, n'est pas repris
     // ici — il reste une suite d'instructions que les autres regles voient.
     return {rule: 'SELECT sur KONV', lines: api, complement,
-            ferme: boucle ? finBoucle : -1};
+            ferme: boucle ? finBoucle : -1, motFin};
   }
 
   // 12c. Le ENDSELECT d'une boucle passee a l'API.
@@ -3810,8 +3827,9 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
   //    atteint apres. On ne reprend pas le corps dans la conversion du
   //    SELECT justement pour que les autres regles continuent de le voir.
   if (/^ENDSELECT\s*\.$/i.test(code) && ctx && ATC_ENDSELECT_KONV.has(ctx.index)){
+    const mot = ATC_ENDSELECT_KONV.get(ctx.index);
     return {rule: 'SELECT sur KONV',
-            lines: [code.replace(/\bENDSELECT\b/i, m => matchCase(m, 'endloop'))]};
+            lines: [code.replace(/\bENDSELECT\b/i, m => matchCase(m, mot))]};
   }
 
   // 13. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.
@@ -3944,7 +3962,9 @@ function atcConvert(code, opts, disabled){
     }
 
     // Conversion retenue : ce qu'elle entraine ailleurs peut etre enregistre.
-    if (typeof res.ferme === 'number' && res.ferme >= 0) ATC_ENDSELECT_KONV.add(res.ferme);
+    if (typeof res.ferme === 'number' && res.ferme >= 0){
+      ATC_ENDSELECT_KONV.set(res.ferme, res.motFin || 'endloop');
+    }
 
     // Ou commence ce que cette conversion ecrit : le bloc en est extrait pour
     // que la proposition porte son propre bouton de copie. Sans lui, il

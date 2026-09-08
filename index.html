@@ -3463,14 +3463,8 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
       }
     }
 
-    // Ou l'API doit ecrire, et comment raccorder la suite du code.
-    //
-    // Un seul cas se branche directement : INTO TABLE d'une table deja
-    // typee KONV. Partout ailleurs — zone de travail implicite, INTO
-    // CORRESPONDING FIELDS, APPENDING — la cible de l'appel ne peut pas
-    // etre celle du SELECT : l'API rend une table de KONV, et rien d'autre.
-    // Il faut donc une table intermediaire, la declarer, et rendre a la
-    // suite du programme ce qu'elle attendait.
+    // Ce que le SELECT alimentait, pour savoir quoi lui rendre : une table,
+    // une table a completer, une zone de travail unique ou une boucle.
     const mTable = /\bINTO\s+TABLE\s+@?([\w<>\-]+)/i.exec(code);
     const mAppend = /\bAPPENDING\s+(?:CORRESPONDING\s+FIELDS\s+OF\s+)?TABLE\s+@?([\w<>\-]+)/i.exec(code);
     const mCorrTable = /\bINTO\s+CORRESPONDING\s+FIELDS\s+OF\s+TABLE\s+@?([\w<>\-]+)/i.exec(code);
@@ -3480,9 +3474,17 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     let table = 'lt_' + zone.toLowerCase();
     for (let i = 2; pris.has(table.toLowerCase()); i++) table = 'lt_' + zone.toLowerCase() + i;
 
-    // Cible directe, sinon table intermediaire.
-    const direct = !!mTable && !mCorrTable;
-    const cible = direct ? mTable[1] : table;
+    // L'API ecrit toujours dans sa propre table.
+    //
+    // Le cookbook branche la table du programme directement sur le parametre
+    // (et_prc_element_classic_format = hkomv), mais ce parametre est
+    // entierement type : TY_RESULT_CLASSIC_FORMAT_T, une table de KONV. Une
+    // table du client n'est compatible que par chance. Une table a ligne
+    // d'en-tete, par exemple, se fait refuser — « the type <flat> of WT_KONV
+    // is not compatible with the type TABLE OF KONV ». On passe donc
+    // systematiquement par une table intermediaire, declaree avec le type de
+    // l'interface, et on reverse ensuite champ par champ.
+    const cible = table;
 
     // La ligne qui rend a la suite du programme ce que le SELECT lui donnait.
     const recue = (!aInto ? zone : (mZone && !mTable && !mAppend ? mZone[1] : ''));
@@ -3499,12 +3501,16 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
       symbole = '<' + zone.toLowerCase() + i + '>';
     }
 
+    const versTable = mCorrTable || mTable;
+
     let raccord = [];
-    if (direct){
-      raccord = [];
-    } else if (mCorrTable){
+    if (versTable){
+      // INTO TABLE comme INTO CORRESPONDING FIELDS OF TABLE remplacaient le
+      // contenu de la table : MOVE-CORRESPONDING le fait aussi, il vide la
+      // cible avant de la remplir. Les crochets visent le corps, une table a
+      // ligne d'en-tete designant autrement son en-tete.
       raccord = [motCle('move-corresponding') + ' ' + table + '[] '
-               + motCle('to') + ' ' + mCorrTable[1] + '[].'];
+               + motCle('to') + ' ' + versTable[1] + '[].'];
     } else if (mAppend){
       // KEEPING TARGET LINES : l'APPENDING ajoutait aux lignes deja presentes,
       // un MOVE-CORRESPONDING nu les effacerait.
@@ -3536,7 +3542,7 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
           + motCle('to') + ' ' + (recue || zone) + '.'
       ];
     }
-    const boucle = !direct && !mCorrTable && !mAppend && !unique;
+    const boucle = !versTable && !mAppend && !unique;
 
     // Quelle voie prendre.
     //
@@ -3614,14 +3620,12 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     api.push('    " traitement d’erreur à écrire');
     api.push('ENDTRY.');
 
-    // Le type vient de l'interface : un STANDARD TABLE OF konv ecrit a la main
-    // devrait etre compatible avec un parametre entierement type. Reprendre
-    // son type ne laisse pas la question ouverte.
-    if (!direct){
-      api.unshift('');
-      api.unshift(motCle('data') + ' ' + table + ' ' + motCle('type')
-                  + ' if_prc_result_database=>ty_result_classic_format_t.');
-    }
+    // Le type vient de l'interface : ecrit a la main, un STANDARD TABLE OF
+    // konv devrait encore etre compatible avec un parametre entierement type.
+    // Reprendre son type ne laisse pas la question ouverte.
+    api.unshift('');
+    api.unshift(motCle('data') + ' ' + table + ' ' + motCle('type')
+                + ' if_prc_result_database=>ty_result_classic_format_t.');
     if (raccord.length){
       api.push('');
       for (const l of raccord) api.push(l);

@@ -3315,6 +3315,40 @@ function atcApplyRules(code, targets, ctx, lengths, prefix){
     }
   }
 
+/**
+ * Les egalites d'un WHERE, si et seulement si il n'est fait que de cela.
+ *
+ * <p>Rend null des qu'une forme sort du cadre — OR, parentheses, intervalle,
+ * comparaison autre que l'egalite, LIKE, IN, IS NULL. L'API de tarification
+ * ne sait exprimer qu'une conjonction d'egalites : proposer un appel qui ne
+ * ramenerait pas les memes lignes serait pire que ne rien proposer.
+ */
+function egalitesDuWhere(code){
+  const debut = code.search(/\bWHERE\b/i);
+  if (debut < 0) return null;
+
+  let clause = code.slice(debut + 5);
+  const fin = clause.search(/\b(?:ORDER\s+BY|GROUP\s+BY|HAVING|INTO|APPENDING|UP\s+TO|FOR\s+ALL\s+ENTRIES|BYPASSING|CLIENT\s+SPECIFIED)\b/i);
+  if (fin >= 0) clause = clause.slice(0, fin);
+  clause = clause.replace(/\.\s*$/, '').trim();
+  if (!clause) return null;
+
+  if (/[()]|\bOR\b|\bNOT\b|\bBETWEEN\b|\bLIKE\b|\bIN\b|\bIS\b|<>|><|>=|<=|>|</i.test(clause)) return null;
+
+  const out = [];
+  for (const part of clause.split(/\bAND\b/i)){
+    const m = /^\s*(?:\w+~)?([A-Za-z_]\w*)\s*=\s*(\S+)\s*$/.exec(part);
+    if (!m) return null;
+    out.push({champ: m[1].toUpperCase(), valeur: m[2].replace(/^@/, '')});
+  }
+  return out.length ? out : null;
+}
+
+/* Cle de GET_PRICE_ELEMENT_DB_BY_KEY, dans l'ordre de la cle. Au-dela de ces
+   quatre champs, la methode n'a pas de parametre : la restriction passe
+   alors par GET_PRICE_ELEMENT_DB et sa liste de couples champ/valeur. */
+const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
+
   // 12b. Tarification SD : KONV ne contient plus de donnees (note 2220005).
   //
   //    Le resultat de tarification est passe dans PRCD_ELEMENTS. KONV reste
@@ -3429,51 +3463,104 @@ function atcApplyRules(code, targets, ctx, lengths, prefix){
     // travail, il n'y a donc pas de cible a reprendre : on nomme une table a
     // declarer, et on le dit. Ecrire « et_prc_element_classic_format = konv »
     // ne compilerait pas.
-    const mKnumv = /\bKNUMV\s*=\s*@?([^\s.]+)/i.exec(code);
     const mCible = /\b(?:INTO\s+TABLE|APPENDING\s+TABLE)\s+@?([\w<>\-]+)/i.exec(code);
     const cible = mCible ? mCible[1] : 'lt_' + zone.toLowerCase();
     const boucle = !aInto && !/\bSELECT\s+SINGLE\b/i.test(code);
 
-    // Meme convention que le reste de l'onglet : l'original est conserve en
-    // commentaire au-dessus du code propose. Le bloc se colle tel quel.
-    const opts = atcOptions();
-    const marque = opts.marker || 'COD001';
-    const sceau = (opts.author || 'AEH') + '_' + opts.date + '_ATC';
-    const marge = (brutes[0].match(/^\s*/) || [''])[0];
+    // Toute la restriction doit passer dans l'appel, pas seulement le numero
+    // de document : un WHERE sur KNUMV et KPOSN qui ne rendrait que KNUMV
+    // ramenerait tous les postes du document.
+    const eg = egalitesDuWhere(code);
+    let complement = null;
 
-    const api = [
-      marge + 'TRY.',
-      marge + '    cl_prc_result_factory=>get_instance( )->get_prc_result( )->get_price_element_db_by_key(',
-      marge + '      EXPORTING iv_knumv                      = '
-            + (mKnumv ? mKnumv[1] : 'komk-knumv'),
-      marge + '      IMPORTING et_prc_element_classic_format = ' + cible + ' ).',
-      marge + '  CATCH cx_prc_result.',
-      marge + '    " traitement d’erreur à écrire',
-      marge + 'ENDTRY.'
-    ];
+    if (eg){
+      const surCle = eg.every(c => CLE_PRC.includes(c.champ));
 
-    const bloc = [`*<<${marque}- ${sceau}`]
-      .concat(brutes.map(l => '*' + l))
-      .concat([`*${marque}->>`, `*<<${marque}+ ${sceau}`])
-      .concat(api)
-      .concat([`*${marque}+>>`]);
+      // Meme convention que le reste de l'onglet : l'original est conserve en
+      // commentaire au-dessus du code propose. Le bloc se colle tel quel.
+      const opts = atcOptions();
+      const marque = opts.marker || 'COD001';
+      const sceau = (opts.author || 'AEH') + '_' + opts.date + '_ATC';
+      const marge = (brutes[0].match(/^\s*/) || [''])[0];
+      const sortie = 'et_prc_element_classic_format';
 
+      let api;
+      if (surCle){
+        // Ordre de la cle plutot que celui du WHERE : c'est celui de la
+        // signature, et il se relit.
+        const passes = CLE_PRC
+          .map(champ => eg.find(c => c.champ === champ))
+          .filter(Boolean);
+        api = [
+          marge + 'TRY.',
+          marge + '    cl_prc_result_factory=>get_instance( )->get_prc_result( )->get_price_element_db_by_key(',
+        ];
+        passes.forEach((c, i) => {
+          const nom = ('iv_' + c.champ.toLowerCase()).padEnd(sortie.length);
+          api.push(marge + '      ' + (i ? '          ' : 'EXPORTING ') + nom + ' = ' + c.valeur);
+        });
+        api.push(marge + '      IMPORTING ' + sortie + ' = ' + cible + ' ).');
+      } else {
+        // Hors cle : la liste de couples champ/valeur, seule forme que
+        // GET_PRICE_ELEMENT_DB accepte.
+        const attrs = eg.map(c => "( fieldname = '" + c.champ + "' value = " + c.valeur + " )");
+        // L'alignement des couples suivants se calcule sur la premiere ligne
+        // plutot que de se compter a la main : la largeur depend du nom du
+        // parametre de sortie.
+        const tete = marge + '      EXPORTING '
+                   + 'it_selection_attribute'.padEnd(sortie.length) + ' = VALUE #( ';
+        api = [
+          marge + 'TRY.',
+          marge + '    cl_prc_result_factory=>get_instance( )->get_prc_result( )->get_price_element_db(',
+          tete + attrs[0]
+        ];
+        for (let i = 1; i < attrs.length; i++){
+          api.push(' '.repeat(tete.length) + attrs[i]);
+        }
+        api[api.length - 1] += ' )';
+        api.push(marge + '      IMPORTING ' + sortie + ' = ' + cible + ' ).');
+      }
+      api.push(marge + '  CATCH cx_prc_result.');
+      api.push(marge + '    " traitement d’erreur à écrire');
+      api.push(marge + 'ENDTRY.');
+
+      complement = {
+        titre: surCle
+          ? 'Pour une lecture sur la clé, SAP renvoie à l’API'
+          : 'Alternative API : sélection par attributs',
+        aCreer: 'Le cookbook de la note 2220005 réserve V_KONV aux sélections '
+              + 'complexes et aux vues CDS ; pour une lecture simple il renvoie à '
+              + 'l’API, PRCD_ELEMENTS étant une table transparente sans buffer de '
+              + 'table cluster. Ce bloc remplace le SELECT, original commenté '
+              + 'compris, et reprend '
+              + (eg.length > 1 ? 'les ' + eg.length + ' conditions du WHERE'
+                               : 'la condition du WHERE')
+              + (surCle
+                  ? '.'
+                  : ' — hors clé, seule GET_PRICE_ELEMENT_DB les accepte, sous '
+                    + 'forme de couples champ/valeur.')
+              + ' La sortie choisie est ' + sortie + ', au format KONV ; '
+              + 'et_prc_element rendrait le format PRCD_ELEMENTS, et les variantes '
+              + 'DRAFT visent PRCD_ELEM_DRAFT.'
+              + (mCible ? '' : ' Déclarez ' + cible + ' TYPE STANDARD TABLE OF '
+                  + zone.toLowerCase() + ' : l’API rend une table.')
+              + (boucle ? ' Le SELECT … ENDSELECT devient un LOOP AT ' + cible
+                  + ', la zone de travail ' + zone + ' étant remplie ligne à ligne.'
+                  : '')
+      };
+      complement.code = [`*<<${marque}- ${sceau}`]
+        .concat(brutes.map(l => '*' + l))
+        .concat([`*${marque}->>`, `*<<${marque}+ ${sceau}`])
+        .concat(api)
+        .concat([`*${marque}+>>`])
+        .join('\n');
+    }
+
+    // Pas de complement quand la restriction sort du cadre de l'API (OR,
+    // intervalle, LIKE...) : c'est precisement le cas ou le cookbook designe
+    // V_KONV, et la conversion ci-dessus suffit.
     return {rule: 'SELECT sur KONV', enPlace: true, lines: sorties,
-            complement: {
-              titre: 'Pour une lecture simple, SAP renvoie à l’API',
-              aCreer: 'Le cookbook de la note 2220005 réserve V_KONV aux sélections '
-                    + 'complexes et aux vues CDS. Pour une lecture qui se résume au '
-                    + 'numéro de document de tarification, il recommande l’API : '
-                    + 'PRCD_ELEMENTS est une table transparente, le buffer des tables '
-                    + 'cluster n’existe plus. Ce bloc remplace le SELECT, original '
-                    + 'commenté compris.'
-                    + (mCible ? '' : ' L’API rend une table : déclarez ' + cible
-                        + ' TYPE STANDARD TABLE OF ' + zone.toLowerCase() + '.')
-                    + (boucle ? ' Le SELECT … ENDSELECT devient alors un LOOP AT '
-                        + cible + ', la zone de travail ' + zone + ' étant remplie '
-                        + 'ligne à ligne.' : ''),
-              code: bloc.join('\n')
-            }};
+            complement};
   }
 
   // 13. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.

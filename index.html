@@ -3424,45 +3424,26 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     }
 
     const aInto = /\bINTO\b|\bAPPENDING\b/i.test(code);
-    let forme = 'nom seul';
 
     if (!aInto){
-      const litteral = x => /^'/.test(x) || /^[0-9]/.test(x) || /^@/.test(x);
-      const sure = x => /-/.test(x) || /^(?:l|g|w|p|s)[a-z]?_/i.test(x);
-      const reOperande = /((?:=|<>|><|>=|<=|>|<|\bEQ\b|\bNE\b|\bGE\b|\bLE\b|\bGT\b|\bLT\b|\bLIKE\b|\bIN\b)\s+)([^\s()]+)/gi;
-
-      const ouWhere = code.search(/\bWHERE\b/i);
-      const clause = ouWhere >= 0 ? code.slice(ouWhere) : '';
-      const operandes = [];
-      let o;
-      while ((o = reOperande.exec(clause))) operandes.push(o[2]);
-
-      const tousSurs = operandes.every(x => litteral(x) || sure(x));
-      const dejaStrict = code.includes('@');
-
-      // ><, =< et => sont les seules formes obsoletes, et la syntaxe stricte
-      // les refuse — comme les classes. Poser un @ a cote ferait echouer la
-      // syntaxe. EQ, NE, LT, GT, LE et GE, eux, restent recevables.
-      const formeCourte = /><|=<|=>/.test(clause);
-
-      if ((tousSurs || dejaStrict) && !formeCourte){
-        forme = 'stricte';
-
-        // Echappement, a partir de la ligne du WHERE seulement : les
-        // operateurs de comparaison n'apparaissent pas avant.
-        let dansWhere = false;
-        for (let i = 0; i < sorties.length; i++){
-          if (/^\*/.test(sorties[i])) continue;
-          const coupe = atcStripComment(sorties[i]);
-          if (!dansWhere && /\bWHERE\b/i.test(coupe.code)) dansWhere = true;
-          if (!dansWhere) continue;
-          reOperande.lastIndex = 0;
-          sorties[i] = coupe.code.replace(reOperande,
-            (t, op, x) => (litteral(x) || !sure(x)) ? t : op + '@' + x) + coupe.comment;
-        }
-
-        // Le point final se deplace : en syntaxe stricte l'INTO est la
-        // derniere clause de l'instruction.
+      // Rendre l'INTO explicite, et rien de plus.
+      //
+      // « SELECT * FROM konv » remplissait la zone de travail de la table ;
+      // depuis v_konv, ce serait celle de la vue. L'INTO doit donc devenir
+      // explicite, et en CORRESPONDING FIELDS : la vue n'expose pas
+      // forcement exactement la meme liste de champs.
+      //
+      // On ne bascule pas en syntaxe stricte pour autant. Elle imposerait
+      // d'echapper toutes les variables hote et de deplacer l'INTO en fin
+      // d'instruction : trois lignes de WHERE archivees et reecrites pour
+      // une selection qui ne change pas. En syntaxe classique l'INTO se
+      // place juste apres le FROM, et la seule ligne touchee est celle qui
+      // portait deja le nom de la table.
+      //
+      // Une exception : si le source est deja en syntaxe stricte, on ne peut
+      // pas revenir en arriere — l'INTO y est la derniere clause, et le
+      // WHERE porte deja ses @.
+      if (code.includes('@')){
         for (let i = sorties.length - 1; i >= 0; i--){
           if (/^\*/.test(sorties[i])) continue;
           const coupe = atcStripComment(sorties[i]);
@@ -3470,44 +3451,10 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
           sorties[i] = coupe.code.replace(/\.(\s*)$/, '$1').trimEnd() + coupe.comment;
           break;
         }
-
-        // INTO CORRESPONDING FIELDS n'initialise pas sa cible : seuls les
-        // champs de meme nom sont affectes, les autres gardent ce qu'ils
-        // avaient. Le SELECT d'origine, lui, remplissait toute la zone a
-        // chaque ligne. Or la vue ne rend pas tout KONV — WEGXX, STUFE et
-        // KOLNR3 ne sont plus stockes — donc ces champs traineraient la
-        // valeur du tour precedent, en silence, et partiraient telles quelles
-        // dans le MOVE-CORRESPONDING suivant.
-        //
-        // On passe donc par la ligne de la vue, puis CLEAR et report champ par
-        // champ : la meme forme que le bloc API, pour la meme raison.
-        let lsVue = 'ls_v_' + zone.toLowerCase();
-        for (let i = 2; pris.has(lsVue.toLowerCase()); i++){
-          lsVue = 'ls_v_' + zone.toLowerCase() + i;
-        }
-
         const marge = (brutes[0].match(/^\s*/) || [''])[0];
-        const dedans = marge + '  ';
-        const report = [
-          dedans + motCle('clear') + ' ' + zone + '.',
-          dedans + motCle('move-corresponding') + ' ' + lsVue + ' '
-                 + motCle('to') + ' ' + zone + '.'
-        ];
-
-        sorties.push(dedans + motCle('into') + ' @' + motCle('data') + '(' + lsVue + ').');
-        if (/\bSELECT\s+SINGLE\b/i.test(code)){
-          // SELECT SINGLE alimentait sy-subrc : la reprise reste sous
-          // condition, comme l'etait l'usage de la zone de travail.
-          sorties.push(marge + motCle('if') + ' sy-subrc = 0.');
-          sorties.push('  ' + report[0]);
-          sorties.push('  ' + report[1]);
-          sorties.push(marge + motCle('endif') + '.');
-        } else {
-          sorties.push(report[0]);
-          sorties.push(report[1]);
-        }
+        sorties.push(marge + '  ' + motCle('into corresponding fields of')
+                            + ' @' + zone + '.');
       } else {
-        forme = 'classique';
         const coupe = atcStripComment(sorties[iFrom]);
         sorties[iFrom] = coupe.code.replace(/(\bFROM\s+v_konv\b)/i,
           (t, m1) => m1 + ' ' + motCle('into corresponding fields of')
@@ -3697,8 +3644,23 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
             + 'SELECT : l’API ramène tout le jeu de résultats en mémoire là où le '
             + 'SELECT … ENDSELECT le parcourait ligne à ligne, et sy-dbcnt comme le '
             + 'sy-subrc qui suit la boucle ne s’écrivent plus de la même façon. '
-            + 'Voici la même lecture par la vue, le corps de boucle restant inchangé.',
-      code: sorties.join('\n')
+            + (boucle
+                ? 'Ce bloc remplace la conversion ci-dessus, ENDSELECT compris : '
+                  + 'la conversion l’a transformé en ENDLOOP, la vue le rend à sa '
+                  + 'forme d’origine. Le corps est recopié tel quel. '
+                : 'Une seule ligne change, celle qui portait le nom de la table. ')
+            + 'Un point à vérifier une fois dans SE11 : INTO CORRESPONDING FIELDS '
+            + 'n’initialise pas sa cible, donc si la vue n’expose pas tout KONV — '
+            + 'WEGXX, STUFE et KOLNR3 ne sont plus stockés — ces champs garderaient '
+            + 'la valeur du tour précédent.',
+      // La conversion a change le ENDSELECT en ENDLOOP : livrer le seul SELECT
+      // laisserait la boucle sans fermeture. L'alternative reprend donc le bloc
+      // entier, corps et ENDSELECT compris, et se colle a la place.
+      code: (boucle && finBoucle >= 0
+              ? sorties.concat(
+                  ctx.stmts.slice(ctx.index + 1, finBoucle + 1)
+                           .reduce((a, st) => a.concat(st.lines), []))
+              : sorties).join('\n')
     };
 
     // Le ENDSELECT de cette boucle devra devenir ENDLOOP. C'est le moteur qui

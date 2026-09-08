@@ -3424,6 +3424,93 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
 
     const aInto = /\bINTO\b|\bAPPENDING\b/i.test(code);
 
+    // Le controle de syntaxe strict, impose par l'acces a une entite CDS
+    // (7.40 SP05) : toutes les variables hote echappees, et l'INTO en
+    // derniere clause. Cela vaut pour l'instruction entiere, INTO deja
+    // ecrit compris — ce n'est pas un choix de mise en forme.
+    let strictOk = true;
+
+    {
+      const ouWhere = code.search(/\bWHERE\b/i);
+      const clause = ouWhere >= 0 ? code.slice(ouWhere) : '';
+      const OPS = '(?:=|<>|><|>=|=<|<=|=>|>|<|\\bEQ\\b|\\bNE\\b|\\bGE\\b|\\bLE\\b|\\bGT\\b|\\bLT\\b|\\bLIKE\\b|\\bIN\\b)';
+
+      // Une colonne est un nom cite a gauche d'une comparaison : c'est la
+      // seule facon pour un operande de droite de ne pas etre une variable.
+      const colonnes = new Set();
+      const reColonne = new RegExp('(?:\\bWHERE\\b|\\bAND\\b|\\bOR\\b)\\s*(?:\\w+~)?([A-Za-z_]\\w*)\\s*' + OPS, 'gi');
+      let cm;
+      while ((cm = reColonne.exec(clause))) colonnes.add(cm[1].toLowerCase());
+
+      const litteral = x => /^'/.test(x) || /^[0-9]/.test(x) || /^@/.test(x);
+      const reOperande = new RegExp('(' + OPS + '\\s+)([^\\s()]+)', 'gi');
+      const echapper = (t, op, x) =>
+        (litteral(x) || colonnes.has(x.toLowerCase())) ? t : op + '@' + x;
+
+      // ><, =< et => sont refuses par le controle strict, comme dans les
+      // classes. Leur equivalent moderne dit la meme chose.
+      const moderne = t => t.replace(/><|=</g, m => m === '><' ? '<>' : '<=')
+                            .replace(/=>/g, '>=');
+
+      let dansWhere = false;
+      for (let i = 0; i < sorties.length; i++){
+        if (/^\*/.test(sorties[i])) continue;
+        const coupe = atcStripComment(sorties[i]);
+        if (!dansWhere && /\bWHERE\b/i.test(coupe.code)) dansWhere = true;
+        if (!dansWhere) continue;
+        reOperande.lastIndex = 0;
+        sorties[i] = moderne(coupe.code).replace(reOperande, echapper) + coupe.comment;
+      }
+
+      // L'INTO deja ecrit doit passer en derniere clause. On ne le deplace
+      // que s'il tient sur une seule ligne : sinon on le signale, plutot que
+      // de recoller une clause a l'aveugle.
+      if (aInto){
+        const SUITE = 'FROM|WHERE|GROUP\\s+BY|HAVING|ORDER\\s+BY|UP\\s+TO|FOR\\s+ALL\\s+ENTRIES|BYPASSING|CLIENT|CONNECTION';
+        let deplace = false;
+        for (let i = 0; i < sorties.length && !deplace; i++){
+          if (/^\*/.test(sorties[i])) continue;
+          const coupe = atcStripComment(sorties[i]);
+          const m = new RegExp('^(.*?)\\b((?:INTO|APPENDING)\\b.*?)(?:(\\s+(?:' + SUITE + ')\\b.*)|(\\s*\\.\\s*))?$', 'i')
+                      .exec(coupe.code);
+          if (!m || !m[2]) continue;
+
+          const avant = m[1] || '';
+          const apres = (m[3] || '') + (m[4] ? '.' : '');
+          const clauseInto = m[2].trim()
+            .replace(/(\b(?:INTO|APPENDING)\b(?:\s+(?:CORRESPONDING\s+FIELDS\s+OF)?\s*(?:TABLE)?\s*)?)/i, '$1')
+            .replace(/(^|[\s(,])(?!@)([A-Za-z_][\w<>\-]*)/g,
+                     (t, sep, nom) => /^(INTO|APPENDING|CORRESPONDING|FIELDS|OF|TABLE)$/i.test(nom)
+                                        ? t : sep + '@' + nom);
+
+          const reste = (avant + apres).replace(/\s+$/, '');
+          if (reste.trim()) sorties[i] = reste + coupe.comment;
+          else sorties.splice(i, 1);
+          deplace = true;
+
+          // Le point final cede la place a un blanc, pas au vide : sur une
+          // ligne commentee, le rogner collerait le code au guillemet.
+          for (let j = sorties.length - 1; j >= 0; j--){
+            if (/^\*/.test(sorties[j])) continue;
+            const c2 = atcStripComment(sorties[j]);
+            if (!/\.\s*$/.test(c2.code.trimEnd())) continue;
+            const sansPoint = c2.code.replace(/\.(\s*)$/, ' $1');
+            sorties[j] = (c2.comment ? sansPoint : sansPoint.trimEnd()) + c2.comment;
+            break;
+          }
+          const marge2 = (brutes[0].match(/^\s*/) || [''])[0];
+          sorties.push(marge2 + '  ' + clauseInto + '.');
+        }
+        if (!deplace){
+          strictOk = false;
+          sorties.push((brutes[0].match(/^\s*/) || [''])[0]
+            + '" INTO a placer en derniere clause : l\'acces a la vue CDS');
+          sorties.push((brutes[0].match(/^\s*/) || [''])[0]
+            + '" impose le controle de syntaxe strict.');
+        }
+      }
+    }
+
     if (!aInto){
       // Rendre l'INTO explicite, en syntaxe stricte.
       //
@@ -3437,41 +3524,8 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
       // derniere clause. Les lignes du WHERE changent pour cela seul — c'est
       // le prix de la vue, pas un choix de mise en forme.
       //
-      // Qu'est-ce qu'une variable hote ? Tout operande de droite qui n'est ni
-      // un litteral, ni deja echappe, ni le nom d'une colonne citee a gauche
-      // dans le meme WHERE : la seule facon pour un operande de droite d'etre
-      // une colonne est d'etre compare a une autre colonne.
-      const ouWhere = code.search(/\bWHERE\b/i);
-      const clause = ouWhere >= 0 ? code.slice(ouWhere) : '';
-      const OPS = '(?:=|<>|><|>=|=<|<=|=>|>|<|\\bEQ\\b|\\bNE\\b|\\bGE\\b|\\bLE\\b|\\bGT\\b|\\bLT\\b|\\bLIKE\\b|\\bIN\\b)';
-
-      const colonnes = new Set();
-      const reColonne = new RegExp('(?:\\bWHERE\\b|\\bAND\\b|\\bOR\\b)\\s*(?:\\w+~)?([A-Za-z_]\\w*)\\s*' + OPS, 'gi');
-      let cm;
-      while ((cm = reColonne.exec(clause))) colonnes.add(cm[1].toLowerCase());
-
-      const litteral = x => /^'/.test(x) || /^[0-9]/.test(x) || /^@/.test(x);
-      const aEchapper = x => !litteral(x) && !colonnes.has(x.toLowerCase());
-      const reOperande = new RegExp('(' + OPS + '\\s+)([^\\s()]+)', 'gi');
-
-      let dansWhere = false;
-      for (let i = 0; i < sorties.length; i++){
-        if (/^\*/.test(sorties[i])) continue;
-        const coupe = atcStripComment(sorties[i]);
-        if (!dansWhere && /\bWHERE\b/i.test(coupe.code)) dansWhere = true;
-        if (!dansWhere) continue;
-        reOperande.lastIndex = 0;
-        // ><, =< et => sont refuses par le controle strict, comme dans les
-        // classes. Leur equivalent moderne dit la meme chose.
-        sorties[i] = coupe.code
-          .replace(/><|=</g, m => m === '><' ? '<>' : '<=')
-          .replace(/=>/g, '>=')
-          .replace(reOperande, (t, op, x) => aEchapper(x) ? op + '@' + x : t)
-          + coupe.comment;
-      }
-
-      // Le point final se deplace : en syntaxe stricte l'INTO est la
-      // derniere clause de l'instruction.
+      // L'echappement a deja eu lieu plus haut : il vaut pour l'instruction
+      // entiere. Il ne reste qu'a poser l'INTO manquant, en derniere clause.
       for (let i = sorties.length - 1; i >= 0; i--){
         if (/^\*/.test(sorties[i])) continue;
         const coupe = atcStripComment(sorties[i]);
@@ -3529,6 +3583,45 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
 
     const versTable = mCorrTable || mTable;
 
+    // Ce que le SELECT lit : toutes les colonnes, ou une liste nommee.
+    //
+    // Avec une liste, la cible n'est pas une structure — « SELECT SINGLE
+    // kbetr INTO wv_kbetr » ecrit dans un montant. Le report se fait alors
+    // colonne par colonne : un MOVE-CORRESPONDING vers un scalaire ne
+    // compile pas.
+    const mListe = /^SELECT\s+(?:SINGLE\s+|DISTINCT\s+)*(.+?)\s+(?:FROM|INTO|APPENDING)\b/i.exec(code);
+    const liste = mListe ? mListe[1].trim() : '*';
+    const toutes = liste === '*';
+    const colonnesLues = toutes ? [] : liste.split(/[\s,]+/).filter(Boolean);
+
+    // INTO (a, b, c) : plusieurs cibles pour plusieurs colonnes.
+    const mIntoListe = /\bINTO\s*\(([^)]*)\)/i.exec(code);
+    const cibles = mIntoListe
+      ? mIntoListe[1].split(/[\s,]+/).filter(Boolean).map(x => x.replace(/^@/, ''))
+      : (!versTable && !mAppend ? [recue || zone] : []);
+
+    // L'API rend des lignes completes de KONV. Elle ne sait pas rendre un
+    // agregat, et brancher une liste de colonnes sur une table dont on ignore
+    // les composants serait un pari : dans ces cas la vue reste la reponse.
+    const agregat = colonnesLues.some(c => c.includes('('));
+    const apiPossible = toutes
+      || (!agregat && !versTable && !mAppend && cibles.length === colonnesLues.length);
+
+    // Le report vers la zone recue.
+    //
+    // Toutes colonnes : MOVE-CORRESPONDING, precede d'un CLEAR — le SELECT
+    // remplissait toute la zone a chaque ligne, MOVE-CORRESPONDING ne touche
+    // que les champs de meme nom, et sans le CLEAR un champ absent de la
+    // table rendue garderait la valeur du tour precedent.
+    //
+    // Liste nommee : une affectation par colonne. Chacune ecrase sa cible,
+    // le CLEAR n'a plus lieu d'etre.
+    const report = toutes
+      ? [motCle('clear') + ' ' + (recue || zone) + '.',
+         motCle('move-corresponding') + ' ' + symbole + ' '
+           + motCle('to') + ' ' + (recue || zone) + '.']
+      : cibles.map((t, i) => t + ' = ' + symbole + '-' + colonnesLues[i] + '.');
+
     let raccord = [];
     if (versTable){
       // INTO TABLE comme INTO CORRESPONDING FIELDS OF TABLE remplacaient le
@@ -3545,28 +3638,18 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
                + motCle('keeping target lines') + '.'];
     } else if (unique){
       // SELECT SINGLE alimentait sy-subrc : le READ TABLE le refait, et la
-      // reprise de la zone de travail reste sous condition.
+      // reprise reste sous condition.
       raccord = [
         motCle('read table') + ' ' + table + ' ' + motCle('assigning field-symbol')
           + '(' + symbole + ') ' + motCle('index') + ' 1.',
-        motCle('if') + ' sy-subrc = 0.',
-        '  ' + motCle('clear') + ' ' + (recue || zone) + '.',
-        '  ' + motCle('move-corresponding') + ' ' + symbole + ' '
-          + motCle('to') + ' ' + (recue || zone) + '.',
-        motCle('endif') + '.'
-      ];
+        motCle('if') + ' sy-subrc = 0.'
+      ].concat(report.map(l => '  ' + l))
+       .concat([motCle('endif') + '.']);
     } else {
-      // CLEAR avant le report : le SELECT remplissait toute la zone a chaque
-      // tour. MOVE-CORRESPONDING ne touche que les champs de meme nom — sans
-      // le CLEAR, un champ absent de la table rendue garderait la valeur du
-      // tour precedent, en silence.
       raccord = [
         motCle('loop at') + ' ' + table + ' ' + motCle('assigning field-symbol')
-          + '(' + symbole + ').',
-        '  ' + motCle('clear') + ' ' + (recue || zone) + '.',
-        '  ' + motCle('move-corresponding') + ' ' + symbole + ' '
-          + motCle('to') + ' ' + (recue || zone) + '.'
-      ];
+          + '(' + symbole + ').'
+      ].concat(report.map(l => '  ' + l));
     }
     const boucle = !versTable && !mAppend && !unique;
 
@@ -3602,7 +3685,7 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     // ferme pas la porte a l'API : la conversion reste juste, seule sa
     // fermeture est a reprendre a la main. On le dit dans le code produit
     // plutot que de retomber sur la vue sans explication.
-    const parApi = !!eg;
+    const parApi = !!eg && apiPossible;
 
     if (!parApi){
       // Pas d'API possible : la vue fait le travail, et on le dit.

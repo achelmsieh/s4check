@@ -3370,21 +3370,16 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
   //    dont la forme depend du cas — on ne l'invente pas ici. La regle ne
   //    reconnait donc que le SELECT.
   //
-  //    Deux consequences a traiter en meme temps que le nom de la table :
+  //    Deux voies, et le cookbook les departage : l'API pour les lectures
+  //    simples, la vue pour les selections complexes et les vues CDS.
   //
-  //    1. La zone de travail implicite. « SELECT * FROM konv » remplit la
-  //       zone de travail de la table ; depuis v_konv, ce serait celle de la
-  //       vue. L'INTO doit donc devenir explicite, et en CORRESPONDING
-  //       FIELDS : V_KONV n'a pas exactement la meme liste de champs.
+  //    L'API est donc la conversion des que la restriction s'y exprime et
+  //    que la boucle se referme proprement ; la vue passe en alternative.
+  //    Sinon la vue est la conversion, et il n'y a pas d'alternative.
   //
-  //    2. La syntaxe. Des qu'un @ apparait, l'instruction entiere bascule en
-  //       syntaxe stricte : toutes les variables hote doivent etre echappees,
-  //       et l'INTO passe en derniere clause. Tout ou rien — une variable
-  //       oubliee est une erreur de syntaxe. On ne bascule donc que si chaque
-  //       operande est reconnaissable a coup sur : un litteral, un nom
-  //       compose (une colonne ne porte jamais de tiret) ou un prefixe de
-  //       nommage usuel. Sinon on garde la syntaxe classique, ou l'INTO se
-  //       place juste apres le FROM et ou aucun @ n'est introduit.
+  //    Dans les deux cas, la zone de travail implicite doit devenir
+  //    explicite : « SELECT * FROM konv » remplissait celle de la table,
+  //    depuis v_konv ce serait celle de la vue.
   if (/^SELECT\b/i.test(code) && /\bFROM\s+KONV\b/i.test(code) && ctx && ctx.stmts){
     const brutes = ctx.stmts[ctx.index].lines;
     const sorties = brutes.slice();
@@ -3394,8 +3389,10 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     const zone = /\bFROM\s+(KONV)\b/i.exec(code)[1];
 
     // Les mots-cles ajoutes suivent la casse des mots-cles du source, pas
-    // celle du nom de table : « SELECT * FROM konv » melange les deux.
-    const motCle = t => matchCase(/\b(FROM)\s+KONV\b/i.exec(code)[1], t);
+    // celle du nom de table : « SELECT * FROM konv » melange les deux. Le
+    // temoin se lit une fois, la regle appelle motCle une dizaine de fois.
+    const temoin = /\b(FROM)\s+KONV\b/i.exec(code)[1];
+    const motCle = t => matchCase(temoin, t);
 
     let iFrom = -1;
     for (let i = 0; i < sorties.length; i++){
@@ -3443,7 +3440,11 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
       // Une exception : si le source est deja en syntaxe stricte, on ne peut
       // pas revenir en arriere — l'INTO y est la derniere clause, et le
       // WHERE porte deja ses @.
-      if (code.includes('@')){
+      // Le @ se cherche hors des litteraux : « WHERE kschl = '@X' » n'est
+      // pas de la syntaxe stricte, et y ajouter un INTO en derniere clause
+      // ferait echouer la syntaxe.
+      const horsLitteraux = code.replace(/'(?:''|[^'])*'/g, "''");
+      if (horsLitteraux.includes('@')){
         for (let i = sorties.length - 1; i >= 0; i--){
           if (/^\*/.test(sorties[i])) continue;
           const coupe = atcStripComment(sorties[i]);
@@ -3462,14 +3463,6 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
       }
     }
 
-    // Alternative de la note elle-meme : pour une lecture simple, le
-    // cookbook deconseille la vue et renvoie a l'API — PRCD_ELEMENTS est une
-    // table transparente, le buffer des tables cluster n'existe plus.
-    //
-    // L'API rend une TABLE. Quand le SELECT ecrivait dans une zone de
-    // travail, il n'y a donc pas de cible a reprendre : on nomme une table a
-    // declarer, et on le dit. Ecrire « et_prc_element_classic_format = konv »
-    // ne compilerait pas.
     // Ou l'API doit ecrire, et comment raccorder la suite du code.
     //
     // Un seul cas se branche directement : INTO TABLE d'une table deja

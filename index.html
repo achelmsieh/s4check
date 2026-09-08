@@ -2962,6 +2962,12 @@ function atcNoteOfChange(res){
    meme nom. Remise a zero au debut de chaque conversion. */
 let atcVarSeq = 0;
 
+/* Les ENDSELECT dont le SELECT est passe a l'API, donc a fermer en ENDLOOP.
+   Rempli quand le SELECT est converti, lu quand la boucle du moteur atteint
+   la fermeture — les instructions defilent dans l'ordre. Remis a zero au
+   debut de chaque conversion, comme le compteur ci-dessus. */
+const ATC_ENDSELECT_KONV = new Set();
+
 /* Suffixe ALPHA, si l'option est active et la source est un article. */
 function atcAlphaOf(src){
   return atcAlphaOut && ATC_IS_MATNR(src) ? ' ALPHA = OUT' : '';
@@ -3592,152 +3598,126 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     }
     const boucle = !direct && !mCorrTable && !mAppend && !unique;
 
-    // Toute la restriction doit passer dans l'appel, pas seulement le numero
-    // de document : un WHERE sur KNUMV et KPOSN qui ne rendrait que KNUMV
-    // ramenerait tous les postes du document.
+    // Quelle voie prendre.
+    //
+    // Le cookbook de la note est explicite : l'API pour les lectures simples,
+    // V_KONV pour les selections complexes et les vues CDS. PRCD_ELEMENTS est
+    // une table transparente, le buffer des tables cluster n'existe plus, et
+    // la vue passe par la meme table sans rien apporter.
+    //
+    // L'API devient donc la conversion, et la vue l'alternative — mais
+    // seulement quand l'API sait exprimer la restriction, et quand la boucle
+    // se referme proprement. Sinon la vue reste la conversion.
     const eg = egalitesDuWhere(code);
-    let complement = null;
+    const surCle = eg ? eg.every(c => CLE_PRC.includes(c.champ)) : false;
 
-    if (eg){
-      const surCle = eg.every(c => CLE_PRC.includes(c.champ));
-
-      // Meme convention que le reste de l'onglet : l'original est conserve en
-      // commentaire au-dessus du code propose. Le bloc se colle tel quel.
-      const opts = atcOptions();
-      const marque = opts.marker || 'COD001';
-      const sceau = (opts.author || 'AEH') + '_' + opts.date + '_ATC';
-      const marge = (brutes[0].match(/^\s*/) || [''])[0];
-      const sortie = 'et_prc_element_classic_format';
-
-      let api;
-      if (surCle){
-        // Ordre de la cle plutot que celui du WHERE : c'est celui de la
-        // signature, et il se relit.
-        const passes = CLE_PRC
-          .map(champ => eg.find(c => c.champ === champ))
-          .filter(Boolean);
-        api = [
-          marge + 'TRY.',
-          marge + '    cl_prc_result_factory=>get_instance( )->get_prc_result( )->get_price_element_db_by_key(',
-        ];
-        passes.forEach((c, i) => {
-          const nom = ('iv_' + c.champ.toLowerCase()).padEnd(sortie.length);
-          api.push(marge + '      ' + (i ? '          ' : 'EXPORTING ') + nom + ' = ' + c.valeur);
-        });
-        api.push(marge + '      IMPORTING ' + sortie + ' = ' + cible + ' ).');
-      } else {
-        // Hors cle : la liste de couples champ/valeur, seule forme que
-        // GET_PRICE_ELEMENT_DB accepte.
-        const attrs = eg.map(c => "( fieldname = '" + c.champ + "' value = " + c.valeur + " )");
-        // L'alignement des couples suivants se calcule sur la premiere ligne
-        // plutot que de se compter a la main : la largeur depend du nom du
-        // parametre de sortie.
-        const tete = marge + '      EXPORTING '
-                   + 'it_selection_attribute'.padEnd(sortie.length) + ' = VALUE #( ';
-        api = [
-          marge + 'TRY.',
-          marge + '    cl_prc_result_factory=>get_instance( )->get_prc_result( )->get_price_element_db(',
-          tete + attrs[0]
-        ];
-        for (let i = 1; i < attrs.length; i++){
-          api.push(' '.repeat(tete.length) + attrs[i]);
+    // Le ENDSELECT qui ferme cette boucle. Il devra devenir ENDLOOP : c'est
+    // une instruction a part, convertie a son tour quand la boucle y arrive.
+    // Sur une boucle imbriquee on ne saurait pas dire lequel ferme laquelle.
+    let finBoucle = -1;
+    if (boucle){
+      for (let i = ctx.index + 1; i < ctx.stmts.length; i++){
+        const texte = atcStmtCode(ctx.stmts[i]);
+        if (/^SELECT\b/i.test(texte) && !/\bINTO\s+TABLE\b|\bSELECT\s+SINGLE\b/i.test(texte)){
+          finBoucle = -1;
+          break;
         }
-        api[api.length - 1] += ' )';
-        api.push(marge + '      IMPORTING ' + sortie + ' = ' + cible + ' ).');
+        if (/^ENDSELECT\s*\.$/i.test(texte)){ finBoucle = i; break; }
       }
-      api.push(marge + '  CATCH cx_prc_result.');
-      api.push(marge + '    " traitement d’erreur à écrire');
-      api.push(marge + 'ENDTRY.');
-
-      // La table intermediaire est declaree dans le bloc : sans cela, le
-      // code propose reference un nom qui n'existe nulle part.
-      // Le type vient de l'interface elle-meme : un STANDARD TABLE OF konv
-      // ecrit a la main devrait etre compatible avec le parametre, qui est
-      // entierement type. Reprendre son type ne laisse pas la question ouverte.
-      if (!direct){
-        api.unshift('');
-        api.unshift(marge + motCle('data') + ' ' + table + ' ' + motCle('type')
-                    + ' if_prc_result_database=>ty_result_classic_format_t.');
-      }
-      if (raccord.length){
-        api.push('');
-        for (const l of raccord) api.push(marge + l);
-      }
-
-      complement = {
-        titre: surCle
-          ? 'Pour une lecture sur la clé, SAP renvoie à l’API'
-          : 'Alternative API : sélection par attributs',
-        aCreer: 'Le cookbook de la note 2220005 réserve V_KONV aux sélections '
-              + 'complexes et aux vues CDS ; pour une lecture simple il renvoie à '
-              + 'l’API, PRCD_ELEMENTS étant une table transparente sans buffer de '
-              + 'table cluster. Ce bloc remplace le SELECT, original commenté '
-              + 'compris, et reprend '
-              + (eg.length > 1 ? 'les ' + eg.length + ' conditions du WHERE'
-                               : 'la condition du WHERE')
-              + (surCle
-                  ? '.'
-                  : ' — hors clé, seule GET_PRICE_ELEMENT_DB les accepte, sous '
-                    + 'forme de couples champ/valeur.')
-              + ' La sortie choisie est ' + sortie + ', au format KONV ; '
-              + 'et_prc_element rendrait le format PRCD_ELEMENTS, et les variantes '
-              + 'DRAFT visent PRCD_ELEM_DRAFT.'
-              + (direct ? ''
-                  : ' L’API écrit dans sa propre table : le bloc déclare ' + table
-                    + ' avec le type de l’interface, puis rend à la suite du '
-                    + 'programme ce que le SELECT lui donnait. Le report se fait '
-                    + 'champ par champ — « format classique » veut dire au format '
-                    + 'de ' + zone.toUpperCase() + ', pas forcément du même type.')
-              + (boucle ? ' La boucle est reprise entière, corps et ENDSELECT '
-                  + 'compris : ' + zone + ' est remplie à chaque tour comme avant, '
-                  + 'le corps est recopié tel quel.' : '')
-      };
-      // Quand le SELECT ouvre une boucle, le bloc la reprend entiere :
-      // corps et ENDSELECT compris. Un complement qui s'arreterait au LOOP AT
-      // ne serait pas collable — il laisserait un ENDSELECT sans SELECT, et
-      // c'est au lecteur de retrouver ce qui va entre les deux.
-      //
-      // Le corps est recopie tel quel : il porte souvent ses propres
-      // marqueurs de reprise, qui ne nous appartiennent pas.
-      let avant = brutes.slice();
-      let apres = [];
-      if (boucle){
-        const corps = [];
-        let fin = -1;
-        for (let i = ctx.index + 1; i < ctx.stmts.length; i++){
-          const texte = atcStmtCode(ctx.stmts[i]);
-          // Une boucle imbriquee : on ne saurait pas dire quel ENDSELECT
-          // ferme laquelle, on s'abstient de reprendre le corps.
-          if (/^SELECT\b/i.test(texte) && !/\bINTO\s+TABLE\b|\bSELECT\s+SINGLE\b/i.test(texte)){
-            fin = -1;
-            break;
-          }
-          if (/^ENDSELECT\s*\.$/i.test(texte)){ fin = i; break; }
-          corps.push(...ctx.stmts[i].lines);
-        }
-        if (fin >= 0){
-          const finLignes = ctx.stmts[fin].lines;
-          avant = avant.concat(corps, finLignes);
-          apres = corps.concat(
-            finLignes.map(l => l.replace(/\bENDSELECT\b/i,
-                                m => matchCase(m, 'endloop'))));
-        }
-      }
-
-      complement.code = [`*<<${marque}- ${sceau}`]
-        .concat(avant.map(l => '*' + l))
-        .concat([`*${marque}->>`, `*<<${marque}+ ${sceau}`])
-        .concat(api)
-        .concat(apres)
-        .concat([`*${marque}+>>`])
-        .join('\n');
     }
 
-    // Pas de complement quand la restriction sort du cadre de l'API (OR,
-    // intervalle, LIKE...) : c'est precisement le cas ou le cookbook designe
-    // V_KONV, et la conversion ci-dessus suffit.
-    return {rule: 'SELECT sur KONV', enPlace: true, lines: sorties,
-            complement};
+    const parApi = !!eg && (!boucle || finBoucle >= 0);
+
+    if (!parApi){
+      // Pas d'API possible : la vue fait le travail, et on le dit.
+      return {rule: 'SELECT sur KONV', enPlace: true, lines: sorties,
+              complement: eg ? null : {
+                titre: 'L’API ne sait pas exprimer cette restriction',
+                aCreer: 'GET_PRICE_ELEMENT_DB_BY_KEY ne prend que les quatre champs '
+                      + 'de la clé, et GET_PRICE_ELEMENT_DB une liste d’égalités. Ni '
+                      + 'l’une ni l’autre ne rend un intervalle, un OR ou un LIKE. '
+                      + 'C’est précisément le cas où le cookbook désigne V_KONV : la '
+                      + 'conversion ci-dessus est la bonne réponse.',
+                code: sorties.join('\n')
+              }};
+    }
+
+    // --- L'appel a l'API -----------------------------------------------------
+    const sortie = 'et_prc_element_classic_format';
+    let api;
+
+    if (surCle){
+      // Ordre de la cle plutot que celui du WHERE : c'est celui de la
+      // signature, et il se relit.
+      const passes = CLE_PRC.map(champ => eg.find(c => c.champ === champ)).filter(Boolean);
+      api = ['TRY.',
+             '    cl_prc_result_factory=>get_instance( )->get_prc_result( )->get_price_element_db_by_key('];
+      passes.forEach((c, i) => {
+        const nom = ('iv_' + c.champ.toLowerCase()).padEnd(sortie.length);
+        api.push('      ' + (i ? '          ' : 'EXPORTING ') + nom + ' = ' + c.valeur);
+      });
+      api.push('      IMPORTING ' + sortie + ' = ' + cible + ' ).');
+    } else {
+      // Hors cle : la liste de couples champ/valeur, seule forme que
+      // GET_PRICE_ELEMENT_DB accepte.
+      const attrs = eg.map(c => "( fieldname = '" + c.champ + "' value = " + c.valeur + " )");
+      const tete = '      EXPORTING ' + 'it_selection_attribute'.padEnd(sortie.length)
+                 + ' = VALUE #( ';
+      api = ['TRY.',
+             '    cl_prc_result_factory=>get_instance( )->get_prc_result( )->get_price_element_db(',
+             tete + attrs[0]];
+      for (let i = 1; i < attrs.length; i++) api.push(' '.repeat(tete.length) + attrs[i]);
+      api[api.length - 1] += ' )';
+      api.push('      IMPORTING ' + sortie + ' = ' + cible + ' ).');
+    }
+    api.push('  CATCH cx_prc_result.');
+    api.push('    " traitement d’erreur à écrire');
+    api.push('ENDTRY.');
+
+    // Le type vient de l'interface : un STANDARD TABLE OF konv ecrit a la main
+    // devrait etre compatible avec un parametre entierement type. Reprendre
+    // son type ne laisse pas la question ouverte.
+    if (!direct){
+      api.unshift('');
+      api.unshift(motCle('data') + ' ' + table + ' ' + motCle('type')
+                  + ' if_prc_result_database=>ty_result_classic_format_t.');
+    }
+    if (raccord.length){
+      api.push('');
+      for (const l of raccord) api.push(l);
+    }
+
+    // --- La vue en alternative ----------------------------------------------
+    const marge = (brutes[0].match(/^\s*/) || [''])[0];
+    const complement = {
+      titre: 'Autre voie : la vue V_KONV',
+      aCreer: 'Le cookbook réserve V_KONV aux sélections complexes et aux vues CDS, '
+            + 'et renvoie à l’API pour les lectures simples — d’où la conversion '
+            + 'ci-dessus. La vue reste la bonne réponse si la lecture doit rester un '
+            + 'SELECT : l’API ramène tout le jeu de résultats en mémoire là où le '
+            + 'SELECT … ENDSELECT le parcourait ligne à ligne, et sy-dbcnt comme le '
+            + 'sy-subrc qui suit la boucle ne s’écrivent plus de la même façon. '
+            + 'Voici la même lecture par la vue, le corps de boucle restant inchangé.',
+      code: sorties.join('\n')
+    };
+
+    // Le ENDSELECT de cette boucle devra devenir ENDLOOP. C'est le moteur qui
+    // l'enregistre, et seulement s'il applique la conversion : decochee, elle
+    // laisserait sinon un ENDLOOP sans LOOP. Le corps, lui, n'est pas repris
+    // ici — il reste une suite d'instructions que les autres regles voient.
+    return {rule: 'SELECT sur KONV', lines: api, complement,
+            ferme: boucle ? finBoucle : -1};
+  }
+
+  // 12c. Le ENDSELECT d'une boucle passee a l'API.
+  //
+  //    La conversion precedente a remplace le SELECT par un LOOP AT ; sa
+  //    fermeture est une instruction distincte, que la boucle du moteur
+  //    atteint apres. On ne reprend pas le corps dans la conversion du
+  //    SELECT justement pour que les autres regles continuent de le voir.
+  if (/^ENDSELECT\s*\.$/i.test(code) && ctx && ATC_ENDSELECT_KONV.has(ctx.index)){
+    return {rule: 'SELECT sur KONV',
+            lines: [code.replace(/\bENDSELECT\b/i, m => matchCase(m, 'endloop'))]};
   }
 
   // 13. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.
@@ -3824,6 +3804,7 @@ function atcConvert(code, opts, disabled){
   const off = disabled || new Set();
 
   atcVarSeq = 0;
+  ATC_ENDSELECT_KONV.clear();
 
   const lines = code.split('\n');
   const out = [];
@@ -3867,6 +3848,9 @@ function atcConvert(code, opts, disabled){
                     after: res.lines.join(' ')});
       continue;
     }
+
+    // Conversion retenue : ce qu'elle entraine ailleurs peut etre enregistre.
+    if (typeof res.ferme === 'number' && res.ferme >= 0) ATC_ENDSELECT_KONV.add(res.ferme);
 
     const indent = (stmt.lines[0].match(/^\s*/) || [''])[0];
 
@@ -3914,7 +3898,8 @@ function atcConvert(code, opts, disabled){
       for (const l of stmt.lines) out.push('*' + l);
       out.push(`*${marker}->>`);
       out.push(`*<<${marker}+ ${stamp}`);
-      for (const l of res.lines) out.push(indent + l);
+      // Une ligne vide reste vide : l'indenter y laisserait des blancs de fin.
+      for (const l of res.lines) out.push(l ? indent + l : '');
       out.push(`*${marker}+>>`);
     } else {
       out.push('*' + stmt.lines[0].trimEnd() + ' ' + tagOld);

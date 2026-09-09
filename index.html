@@ -303,13 +303,22 @@ mark.partial-2438006{background:transparent;color:var(--fmod);text-decoration:un
 .atcNoteHead .n{margin-left:auto;color:var(--ink-faint);font-variant-numeric:tabular-nums}
 .atcNoteHead.afle .id{color:var(--afle)}
 .atcNoteHead.fmod .id{color:var(--fmod)}
+.atcNoteHead.dtyp .id{color:var(--dtyp)}
 .atcPick input{width:15px;height:15px;margin:0;cursor:pointer;accent-color:var(--fix);flex:none}
 .atcItem{transition:opacity .15s ease}
 .qfSap{margin-left:8px;font-size:10.5px;font-weight:600;letter-spacing:.02em;
   padding:2px 7px;border-radius:99px;background:var(--dtyp-bg);color:var(--dtyp);
   box-shadow:inset 0 0 0 1px var(--dtyp-soft);cursor:help}
 .qfSap.cond{background:var(--warn-bg);color:var(--warn);
-  box-shadow:inset 0 0 0 1px var(--warn-soft)}
+  box-shadow:inset 0 0 0 1px var(--warn-border)}
+/* Constat sans correction : ni case a cocher, ni diff. On montre la ligne
+   telle qu'elle est, et ce que la note en dit. Le jaune de l'avertissement
+   plutot que le violet des corrections — il n'y a rien a appliquer ici. */
+.constatTag{margin-left:8px;font-size:10.5px;font-weight:600;letter-spacing:.02em;
+  padding:2px 7px;border-radius:99px;background:var(--warn-bg);color:var(--warn);
+  box-shadow:inset 0 0 0 1px var(--warn-border);cursor:help}
+.atcItem.constat .atcPick{cursor:default}
+.keep{background:var(--rule-soft);color:var(--ink-soft);border-radius:4px;padding:1px 6px}
 .atcItem .atcCopie{float:right;margin:-1px 0 0 8px;font-size:11px;padding:3px 9px}
 .atcItem.off .atcCopie{display:none}
 .atcItem.off{opacity:.42}
@@ -793,6 +802,32 @@ const NOTE_CATALOG = [
          + "NUMC7, dont il ne faut reprendre que les trois derniers chiffres pour "
          + "reconstruire un nom d’include ; et côté dictionnaire, les champs "
          + "ajoutés à KONV, à reporter sur PRCS_ELEMENTS_DATA et sur la vue V_KONV"},
+  {id: "2270419", note: "2270419", domain: "atc",    cls: "fmod",
+   label: "Compte général et nature comptable fusionnés",
+   // Seule note du catalogue a ne rien corriger : elle signale, et c'est
+   // tout. L'affichage doit le dire, sans quoi « Corrigé ici » promettrait
+   // une reprise que l'outil n'a pas faite.
+   constats: true,
+   aide: "Les natures comptables secondaires sont devenues des comptes généraux : "
+       + "SKA1, SKB1 et SKAT les portent désormais, et le champ SKA1-GLACCOUNTTYPE "
+       + "dit de quel type de compte il s’agit. En regard, CSKA, CSKB et CSKU ne "
+       + "s’alimentent plus par du code, l’imputation par défaut de CSKB est passée "
+       + "dans TKA3A, TKSKA est vidée, T004-INTEG_CO n’a plus d’objet et KA01 à KA06 "
+       + "renvoient sur FS00. Le détail technique de la reprise est dans la note "
+       + "2389136.",
+   couvre: "les écritures directes sur les tables de maître, les champs et tables "
+         + "devenus obsolètes, les lectures dont le périmètre change, et les appels "
+         + "aux transactions KA0x",
+   manuel: "tout, et c’est délibéré. Aucune de ces reprises ne se déduit de "
+         + "l’instruction seule. Une écriture se remplace par K_COSTELEM_BAPI_* pour "
+         + "les natures, par l’ALE, RFBISA00 ou la Data Transfer Workbench pour les "
+         + "comptes — l’interface dépend de ce que le programme alimente. Un batch "
+         + "input sur KA01 se refait sur les écrans de FS00, qui n’ont rien de commun, "
+         + "ou se remplace par FS15/FS16, voire OB_GLACC* en maintenance de masse. "
+         + "L’imputation par défaut se relit dans TKA3A (OKB9), dont la clé n’est pas "
+         + "celle de CSKB. Vérifiez enfin les états qui listent les comptes : ils "
+         + "remontent maintenant les natures secondaires, et SKB1-XKRES est posé sur "
+         + "presque tous les comptes"},
   // Sans numero de note : ce sont des controles de programmation robuste, pas
   // des points de simplification S/4. Ils partagent pourtant une seule cause
   // — le code s'appuie sur un ordre de lignes que HANA ne garantit plus — et
@@ -2977,6 +3012,19 @@ const ATC_RULE_NOTE = {
   "SELECT sur VBUP": "2198647",
   "VBTYP (categorie de document)": "2198647",
   "VBFA ORDER BY PRIMARY KEY": "2198647",
+  "Ecriture sur CSKA / CSKB / CSKU": "2270419",
+  "Ecriture sur SKA1 / SKB1 / SKAT": "2270419",
+  "SELECT sur SKA1": "2270419",
+  "SELECT sur SKB1": "2270419",
+  "SELECT sur SKAT": "2270419",
+  "CSKB-AUFNR / CSKB-KOSTL": "2270419",
+  "T004-INTEG_CO": "2270419",
+  "TKSKA (table videe)": "2270419",
+  "SKB1-XKRES": "2270419",
+  "CALL TRANSACTION KA01": "2270419",
+  "CALL TRANSACTION KA02": "2270419",
+  "CALL TRANSACTION KA03": "2270419",
+  "CALL TRANSACTION KA06": "2270419",
   "SELECT sans ORDER BY": "ORDRE",
   "DELETE ADJACENT DUPLICATES sans tri": "ORDRE",
   "LOOP AT ... AT sans tri": "ORDRE",
@@ -3214,6 +3262,135 @@ function reecrireVersVueCds(brutes, code, source, vue){
   }
 
   return {lignes: sorties, zone, motCle, aInto, strictOk};
+}
+
+/* Tables du dictionnaire touchees par la fusion compte / nature (2270419).
+   Un identifiant qui porte exactement l'un de ces noms est la table : on ne
+   baptise pas une table interne CSKA, et le doute vaut mieux que le
+   silence — le constat n'ecrit rien, il ne coute qu'une lecture. */
+const FUSION_NATURE = {cska: 'CSKA', cskb: 'CSKB', csku: 'CSKU'};
+const FUSION_COMPTE = {ska1: 'SKA1', skb1: 'SKB1', skat: 'SKAT'};
+
+/**
+ * La table ecrite par une instruction, si elle figure dans la liste donnee.
+ *
+ * <p>INSERT, UPDATE, MODIFY et DELETE portent leur cible a des places
+ * differentes, et DELETE ADJACENT DUPLICATES ne vise pas une table de base.
+ * La forme sur table interne se reconnait a son INTO TABLE : c'est alors le
+ * premier nom qui est la zone de travail, pas la cible.
+ */
+function tableEcrite(code, connues){
+  const m = /^(INSERT|UPDATE|MODIFY|DELETE)\s+(?:FROM\s+|INTO\s+)?([A-Za-z_]\w*)\b/i.exec(code);
+  if (!m) return null;
+  if (/^INSERT\b/i.test(code) && /\bINTO\s+TABLE\b/i.test(code)) return null;
+  return connues[m[2].toLowerCase()] || null;
+}
+
+/**
+ * Constats de la fusion compte general / nature comptable (note 2270419).
+ *
+ * <p>Rien n'est corrige ici, et c'est le fond du sujet. Ce que la note
+ * demande — passer par une BAPI, refaire un batch input sur d'autres ecrans,
+ * relire l'imputation dans une table dont la cle a change — suppose de
+ * savoir ce que le programme alimente et avec quoi. Une proposition
+ * plausible ferait passer pour repris ce qui ne l'est pas, et c'est
+ * l'erreur qu'une relecture ne rattrape pas.
+ *
+ * <p>Le constat est donc pose tel quel : la ligne n'est pas touchee, la
+ * note dit ce qui ne va plus et par ou passer.
+ */
+function constatFusionCompte(code){
+  const dit = (rule, titre, aCreer) => ({rule, constat: true, complement: {titre, aCreer}});
+
+  let t = tableEcrite(code, FUSION_NATURE);
+  if (t) return dit('Ecriture sur CSKA / CSKB / CSKU',
+    t + ' ne s’écrit plus depuis du code',
+    'La note 2389136 est formelle : ces tables ne doivent plus être alimentées '
+    + 'directement. Passez par les modules K_COSTELEM_BAPI_*, dont l’interface dépend '
+    + 'de ce que l’instruction écrivait — création ou modification, et quels champs. '
+    + 'Rappelez-vous qu’une nature secondaire est maintenant aussi un compte général : '
+    + 'la créer suppose que sa partie plan comptable existe.');
+
+  t = tableEcrite(code, FUSION_COMPTE);
+  if (t) return dit('Ecriture sur SKA1 / SKB1 / SKAT',
+    t + ' ne s’écrit plus depuis du code',
+    'Ces tables portent désormais aussi les natures comptables secondaires, et la note '
+    + 'interdit de les écrire depuis un programme. Les voies prévues sont l’ALE, '
+    + 'l’interface fichier RFBISA00, ou la Data Transfer Workbench (IMG : Comptabilité '
+    + 'générale → Données de base → Création et traitement des comptes généraux).');
+
+  // Imputation par defaut : les deux champs ont quitte CSKB pour TKA3A.
+  //    Deux formes a prendre : le champ d'une zone de travail typee CSKB
+  //    — ls_cskb-kostl, la plus frequente, et le nom de la structure y
+  //    colle au prefixe — et la table lue directement.
+  if (/\b\w*cskb-(?:aufnr|kostl)\b/i.test(code)
+      || (/\bcskb\b/i.test(code) && /\b(?:aufnr|kostl)\b/i.test(code)))
+    return dit('CSKB-AUFNR / CSKB-KOSTL',
+      'L’imputation par défaut a quitté CSKB',
+      'AUFNR et KOSTL ne sont plus renseignés dans CSKB : la migration les recopie '
+      + 'dans TKA3A — l’imputation par défaut du compte, transaction OKB9 — puis les '
+      + 'vide. Ce n’est pas un renommage : TKA3A se lit par société et compte, CSKB '
+      + 'par domaine de contrôle et nature. La lecture est donc à réécrire.');
+
+  if (/\bt004\b/i.test(code) && /\binteg_co\b/i.test(code))
+    return dit('T004-INTEG_CO',
+      'INTEG_CO n’a plus d’objet',
+      'Le champ disait si le plan comptable était intégré au contrôle de gestion. La '
+      + 'question ne se pose plus : toute nature comptable est un compte général. Le '
+      + 'test qui s’appuyait dessus est à retirer, en gardant la branche qui '
+      + 'correspondait à l’intégration active.');
+
+  if (/\btkska\b/i.test(code))
+    return dit('TKSKA (table videe)',
+      'TKSKA est vidée par la migration',
+      'La table de classification des comptes est obsolète, et son contenu est effacé '
+      + 'pendant la reprise. La lecture ne ramènera plus rien — sans erreur, sans '
+      + 'message, sans SY-SUBRC parlant si le traitement ne le teste pas. C’est tout '
+      + 'le passage qui en dépend qui est à revoir.');
+
+  const ka = /^CALL\s+TRANSACTION\s+'(KA0[1236])'/i.exec(code);
+  if (ka){
+    const tcode = ka[1].toUpperCase();
+    const bdc = /\bUSING\b/i.test(code);
+    return dit('CALL TRANSACTION ' + tcode,
+      tcode + ' est redirigée vers FS00',
+      bdc
+        ? 'C’est l’appel par batch input qui pose problème : la note prévient que le '
+          + 'compte peut ne pas être créé, sans que l’appel le signale. Les écrans de '
+          + 'FS00 n’ont rien de commun avec ceux de ' + tcode + ' — la table BDC est à '
+          + 'refaire entièrement. Deux voies souvent plus sûres : l’interface fichier '
+          + 'FS15 / FS16, ou la maintenance de masse OB_GLACC*.'
+        : 'L’appel en dialogue arrive sur FS00 et continue de fonctionner. Le laisser '
+          + 'tel quel est tenable ; l’écrire en clair évite qu’il surprenne à la '
+          + 'relecture. En revanche, si le programme alimente un batch input plus loin, '
+          + 'le compte peut ne pas être créé sans que rien ne le signale.');
+  }
+
+  // Perimetre des lectures. SKA1, SKB1 et SKAT contiennent maintenant les
+  // natures secondaires : un etat qui listait les comptes en ramene
+  // davantage, silencieusement. Un filtre sur le nouveau champ de type vaut
+  // adaptation — le programme a deja fait la part des choses.
+  const lu = /^SELECT\b[\s\S]*?\bFROM\s+(SKA1|SKB1|SKAT)\b/i.exec(code);
+  if (lu && !/\bglaccount_?type\b/i.test(code)){
+    const table = lu[1].toUpperCase();
+    return dit('SELECT sur ' + table,
+      table + ' contient maintenant les natures secondaires',
+      'La sélection ramène des comptes qui n’existaient pas avant la migration. Si '
+      + 'l’état doit garder son périmètre, filtrez sur SKA1-GLACCOUNTTYPE : X pour un '
+      + 'compte de bilan, N pour un compte de charges ou produits sans nature, P pour '
+      + 'une nature primaire, S pour une nature secondaire. Le groupe de comptes SECC, '
+      + 'créé par la migration, permet aussi de les reconnaître.');
+  }
+
+  if (/\bskb1\b/i.test(code) && /\bxkres\b/i.test(code))
+    return dit('SKB1-XKRES',
+      'XKRES est désormais posé sur presque tous les comptes',
+      'La migration active la gestion en postes individuels sur tous les comptes, sauf '
+      + 'les comptes d’ordre spécifiques à un groupe de ledgers. Un traitement qui se '
+      + 'servait de cet indicateur pour distinguer les comptes ne distingue donc plus '
+      + 'grand-chose.');
+
+  return null;
 }
 
 function atcApplyRules(code, targets, ctx, lengths, prefix){
@@ -4127,6 +4304,16 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     if (fait) return {rule: 'VBFA ORDER BY PRIMARY KEY', enPlace: true, lines: sorties};
   }
 
+  // 12g. Compte general et nature comptable fusionnes (note 2270419, detail
+  //    technique dans la 2389136). Uniquement des constats — voir
+  //    constatFusionCompte pour ce qui les distingue des conversions.
+  //
+  //    Places avant les regles d'ordre : un SELECT sur SKA1 sans ORDER BY a
+  //    les deux defauts, mais le changement de perimetre est le plus grave
+  //    et le plus discret — et l'ORDER BY, lui, a un Quick Fix chez SAP.
+  const fusion = constatFusionCompte(code);
+  if (fusion) return fusion;
+
   // 13. SELECT ... UP TO n ROWS sans ORDER BY -> ORDER BY PRIMARY KEY.
   //    Sur les tables pool/cluster devenues transparentes, l'interface base
   //    de donnees n'ajoute plus le tri implicite par cle primaire : on le
@@ -4242,6 +4429,19 @@ function atcConvert(code, opts, disabled){
       continue;
     }
     const note = atcNoteOfChange(res);
+
+    // Constat sans correction : le code sort intact. Il est signale, avec
+    // ce que la note en dit, mais aucune ligne n'est commentee ni reecrite
+    // — donc pas de case a cocher, il n'y a rien a appliquer.
+    if (res.constat){
+      out.push(...stmt.lines);
+      changes.push({key: stmt.start, constat: true, applied: false,
+                    line: stmt.start + 1, rule: res.rule, note, champs: null,
+                    complement: res.complement || null,
+                    before: stmt.lines.map(l => l.trim()).join(' '),
+                    after: ''});
+      continue;
+    }
 
     // La ligne de depart de l'instruction sert de cle stable pour la case
     // a cocher : decochee, la conversion est listee mais pas appliquee.
@@ -4517,6 +4717,10 @@ function renderAtc(){
   const opts = atcOptions();
   const {code: converted, changes} = atcConvert(code, opts, atcDisabled);
   const nOn = changes.filter(c => c.applied).length;
+  // Un constat n'est ni coche ni cochable : le compter parmi les conversions
+  // ferait lire « 0 / 3 » la ou il n'y avait rien a appliquer.
+  const nCons = changes.filter(c => c.constat).length;
+  const nConv = changes.length - nCons;
 
   const offNotes = ATC_NOTES.filter(x => !ACTIVE_NOTES.has(x));
   $atcHint.innerHTML = (opts.targets.length
@@ -4527,7 +4731,10 @@ function renderAtc(){
           + (offNotes.length > 1 ? 's' : '') + ' : <b>' + offNotes.join('</b>, <b>') + '</b>'
         : '');
   $atcCount.textContent = changes.length
-    ? nOn + ' / ' + changes.length + ' conversion' + (changes.length > 1 ? 's' : '') + ' selectionnee' + (nOn > 1 ? 's' : '')
+    ? [nConv ? nOn + ' / ' + nConv + ' conversion' + (nConv > 1 ? 's' : '')
+                 + ' selectionnee' + (nOn > 1 ? 's' : '') : '',
+       nCons ? nCons + ' constat' + (nCons > 1 ? 's' : '') + ' sans correction' : '']
+        .filter(Boolean).join('  ·  ')
     : 'aucune conversion applicable';
 
   if (!changes.length){
@@ -4537,7 +4744,7 @@ function renderAtc(){
     const allOff = offNotes.length === ATC_NOTES.length;
     $atcResults.innerHTML = '<div class="empty"><p>'
       + (allOff
-          ? 'Les deux notes de cet onglet sont decochees — aucune conversion n\'est proposee.'
+          ? 'Toutes les notes de cet onglet sont decochees — aucune conversion n\'est proposee.'
           : 'Aucune regle ne s\'applique a ce code.')
       + '</p>'
       + (allOff
@@ -4550,10 +4757,13 @@ function renderAtc(){
   const id = 'atc' + (++fixSeq);
   PENDING_FIX.set(id, converted);
 
-  const allOn = nOn === changes.length;
+  const allOn = nOn === nConv;
   let html = '<div class="fixBox"><div class="fixHead">'
-    + '<p class="fixTitle">' + nOn + ' conversion' + (nOn > 1 ? 's' : '') + ' sur ' + changes.length + '</p>'
-    + (changes.length > 1
+    + '<p class="fixTitle">'
+    + (nConv ? nOn + ' conversion' + (nOn > 1 ? 's' : '') + ' sur ' + nConv : 'Aucune conversion')
+    + (nCons ? ' · ' + nCons + ' constat' + (nCons > 1 ? 's' : '') : '')
+    + '</p>'
+    + (nConv > 1
         ? '<button class="btn" id="atcToggleAll">' + (allOn ? 'Tout décocher' : 'Tout cocher') + '</button>'
         : '')
     + '<button class="btn" data-fixcopy="' + id + '"' + (nOn ? '' : ' disabled') + '>Copier le code converti</button>'
@@ -4565,16 +4775,37 @@ function renderAtc(){
   for (const note of ATC_NOTES){
     const group = changes.filter(c => c.note === note);
     if (!group.length) continue;
+    const gCons = group.filter(c => c.constat).length;
+    const gConv = group.length - gCons;
     const nGroup = group.filter(c => c.applied).length;
 
     html += '<div class="atcNoteHead ' + NOTE_CLASS[note] + (firstGroup ? ' first' : '') + '">'
       + '<span class="id">' + esc(noteRef(note)) + '</span>'
       + '<span class="lbl">' + esc(NOTE_LABEL[note]) + '</span>'
-      + '<span class="n">' + nGroup + ' / ' + group.length + '</span></div>';
+      + '<span class="n">'
+      + (gConv ? nGroup + ' / ' + gConv : '')
+      + (gCons ? (gConv ? ' · ' : '') + gCons + ' constat' + (gCons > 1 ? 's' : '') : '')
+      + '</span></div>';
     firstGroup = false;
 
     html += '<ul class="fixList atcList">';
     for (const c of group){
+      // Ni case a cocher, ni diff : rien n'a change. La ligne telle qu'elle
+      // est, le constat, et ce que la note demande d'en faire.
+      if (c.constat){
+        html += '<li class="atcItem constat">'
+          + '<div class="atcPick">'
+          + '<span class="atcNum">l.' + c.line + '</span>'
+          + '<span class="atcRule">' + esc(c.rule) + '</span>'
+          + '<span class="constatTag" title="La note signale ce point, mais la reprise '
+            + 'ne se déduit pas de l’instruction seule : l’outil ne modifie rien ici et '
+            + 'ne propose pas de code.">reprise manuelle</span>'
+          + '</div>'
+          + '<div class="fixLine" style="margin-top:4px"><span class="keep">'
+          + esc(c.before) + '</span></div>'
+          + complementHtml(c) + '</li>';
+        continue;
+      }
       html += '<li class="atcItem' + (c.applied ? '' : ' off') + '">'
         + '<label class="atcPick">'
         + '<input type="checkbox" data-key="' + c.key + '"' + (c.applied ? ' checked' : '') + '>'
@@ -4788,7 +5019,10 @@ $noteBar.addEventListener('mouseover', e => {
   tip.innerHTML = '<span class="titre">'
       + esc((note.note ? note.note + ' — ' : '') + note.label) + '</span>'
     + esc(note.aide || '')
-    + (note.couvre ? '<span class="fait">Corrigé ici : ' + esc(note.couvre) + '</span>' : '')
+    + (note.couvre
+        ? '<span class="fait">' + (note.constats ? 'Signalé ici : ' : 'Corrigé ici : ')
+          + esc(note.couvre) + '</span>'
+        : '')
     + (note.manuel ? '<span class="reste">À reprendre à la main : ' + esc(note.manuel) + '</span>' : '')
     + (used ? '' : '<span class="ou">Agit sur l’onglet '
         + esc(NOTE_TABS_LABEL[note.domain]) + '.</span>');

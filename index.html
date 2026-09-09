@@ -13,7 +13,7 @@
     - toute redistribution, mise a disposition ou publication
     - toute reutilisation de tout ou partie du code dans un autre produit
 
-  Build : 2026-09-08
+  Build : 2026-09-09
   L'empreinte SHA-256 de la version authentique est fournie separement
   (fichier .sha256). Un exemplaire dont l'empreinte differe a ete modifie.
 
@@ -305,6 +305,9 @@ mark.partial-2438006{background:transparent;color:var(--fmod);text-decoration:un
 .atcNoteHead.fmod .id{color:var(--fmod)}
 .atcPick input{width:15px;height:15px;margin:0;cursor:pointer;accent-color:var(--fix);flex:none}
 .atcItem{transition:opacity .15s ease}
+.qfSap{margin-left:8px;font-size:10.5px;font-weight:600;letter-spacing:.02em;
+  padding:2px 7px;border-radius:99px;background:var(--dtyp-bg);color:var(--dtyp);
+  box-shadow:inset 0 0 0 1px var(--dtyp-soft);cursor:help}
 .atcItem .atcCopie{float:right;margin:-1px 0 0 8px;font-size:11px;padding:3px 9px}
 .atcItem.off .atcCopie{display:none}
 .atcItem.off{opacity:.42}
@@ -643,7 +646,7 @@ html[data-theme="dark"] .fixPre{background:#191920}
 <footer class="wrap">
   <kbd>/</kbd> pour chercher · <kbd>Échap</kbd> pour effacer · recherche insensible à la casse, sous-chaîne.
   <div class="legal">
-    © 2026 Codilog — build 2026-09-08.
+    © 2026 Codilog — build 2026-09-09.
     Usage interne réservé à Codilog. Modification, redistribution et
     réutilisation soumises à autorisation écrite de Codilog.
   </div>
@@ -2978,6 +2981,34 @@ const ATC_RULE_NOTE = {
   "READ ... BINARY SEARCH sans tri": "ORDRE"
 };
 
+/* Constats pour lesquels ADT propose un Quick Fix SAP.
+ *
+ * Le partage du travail entre les deux outils tient a cette liste.
+ *
+ * Dans Eclipse, ces corrections-la sont deja livrees par SAP (notes 2738251
+ * et 2866977, plus 2364938 pour une partie de MATNR) : les refaire dans
+ * l'extension serait doubler un travail mieux fait a la source, et prendre
+ * le risque de diverger. L'extension ne les reprendra donc pas.
+ *
+ * La page, elle, les garde : elle sert justement la ou ADT n'est pas — sans
+ * Eclipse, sans les notes chargees, ou pour relire une correction avant de
+ * l'appliquer. C'est aussi pour cela qu'elle affiche le rappel : quand le
+ * Quick Fix SAP existe, c'est lui la reference.
+ *
+ * La liste est a ajuster sur la note 2866977, qui recense les controles
+ * couverts. Ce qui n'y figure pas nous revient, et doit passer dans
+ * l'extension pour y etre corrige automatiquement.
+ */
+const ATC_QUICKFIX_SAP = new Set([
+  "MATNR (18)",
+  "SELECT sur KONV",
+  "SELECT sur VBUK",
+  "SELECT sur VBUP",
+  "VBTYP (categorie de document)",
+  "VBFA ORDER BY PRIMARY KEY",
+  "SELECT sans ORDER BY"
+]);
+
 /* ALPHA = OUT s'ajoute aux WRITE portant un numero d'article. C'est une
    option distincte, rattachee a 2215424 : jamais appliquee aux montants. */
 let atcAlphaOut = true;
@@ -4521,7 +4552,13 @@ function renderAtc(){
         + '<label class="atcPick">'
         + '<input type="checkbox" data-key="' + c.key + '"' + (c.applied ? ' checked' : '') + '>'
         + '<span class="atcNum">l.' + c.line + '</span>'
-        + '<span class="atcRule">' + esc(c.rule) + '</span></label>'
+        + '<span class="atcRule">' + esc(c.rule) + '</span>'
+        + (ATC_QUICKFIX_SAP.has(c.rule)
+            ? '<span class="qfSap" title="Dans ADT, ce constat a un Quick Fix livré par SAP '
+              + '(notes 2738251 et 2866977). Préférez-le : il fait foi. La correction est '
+              + 'proposée ici pour les cas où Eclipse n’est pas disponible.">Quick Fix SAP</span>'
+            : '')
+        + '</label>'
         + blocCopieHtml(c)
         + '<div class="fixLine" style="margin-top:4px"><span class="del">' + esc(c.before) + '</span></div>'
         + '<div class="fixLine" style="margin-top:2px"><span class="add">' + esc(c.after) + '</span></div>'

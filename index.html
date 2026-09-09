@@ -308,6 +308,8 @@ mark.partial-2438006{background:transparent;color:var(--fmod);text-decoration:un
 .qfSap{margin-left:8px;font-size:10.5px;font-weight:600;letter-spacing:.02em;
   padding:2px 7px;border-radius:99px;background:var(--dtyp-bg);color:var(--dtyp);
   box-shadow:inset 0 0 0 1px var(--dtyp-soft);cursor:help}
+.qfSap.cond{background:var(--warn-bg);color:var(--warn);
+  box-shadow:inset 0 0 0 1px var(--warn-soft)}
 .atcItem .atcCopie{float:right;margin:-1px 0 0 8px;font-size:11px;padding:3px 9px}
 .atcItem.off .atcCopie{display:none}
 .atcItem.off{opacity:.42}
@@ -3000,13 +3002,38 @@ const ATC_RULE_NOTE = {
  * l'extension pour y etre corrige automatiquement.
  */
 const ATC_QUICKFIX_SAP = new Set([
-  "MATNR (18)",
+  // 2220005 et 2198647 : acces aux tables videes, et elements VBTYP.
   "SELECT sur KONV",
   "SELECT sur VBUK",
   "SELECT sur VBUP",
   "VBTYP (categorie de document)",
   "VBFA ORDER BY PRIMARY KEY",
-  "SELECT sans ORDER BY"
+  // 1912445 : le controle de l'ORDER BY, « quick fixes for all messages ».
+  // Ce sont donc les quatre constats de la famille, pas seulement le SELECT.
+  "SELECT sans ORDER BY",
+  "DELETE ADJACENT DUPLICATES sans tri",
+  "LOOP AT ... AT sans tri",
+  "READ ... BINARY SEARCH sans tri"
+]);
+
+/* Quick Fix SAP sous condition.
+ *
+ * Pour 2215424 et 2610650, la note 2866977 pose une reserve qui change
+ * tout : « Prerequisites for quick fixes: the material number field length
+ * extension is not used in SAP S/4HANA », et de meme pour les montants.
+ *
+ * Autrement dit, ADT ne corrige ces constats que sur un systeme ou
+ * l'extension n'est PAS mise en oeuvre — la ou il n'y a rien a corriger.
+ * Des que le n° d'article passe a 40 ou que les montants s'elargissent,
+ * c'est-a-dire le cas d'une reprise reelle, le Quick Fix n'est pas propose
+ * et ces regles sont les seules a automatiser quelque chose.
+ *
+ * Elles restent donc dans l'extension, avec la reserve affichee ici.
+ */
+const ATC_QUICKFIX_SI_PAS_ETENDU = new Set([
+  "MATNR (18)", "MOVE", "ADD", "ADD chaine", "SUBTRACT", "SUBTRACT chaine",
+  "WRITE ... TO", "WRITE ... CURRENCY", "WRITE: chaine",
+  "Affectation", "Calcul", "TRANSFER (format ECC)"
 ]);
 
 /* ALPHA = OUT s'ajoute aux WRITE portant un numero d'article. C'est une
@@ -4555,8 +4582,15 @@ function renderAtc(){
         + '<span class="atcRule">' + esc(c.rule) + '</span>'
         + (ATC_QUICKFIX_SAP.has(c.rule)
             ? '<span class="qfSap" title="Dans ADT, ce constat a un Quick Fix livré par SAP '
-              + '(notes 2738251 et 2866977). Préférez-le : il fait foi. La correction est '
-              + 'proposée ici pour les cas où Eclipse n’est pas disponible.">Quick Fix SAP</span>'
+              + '(note 2866977). Préférez-le : il fait foi. La correction est proposée ici '
+              + 'pour les cas où Eclipse n’est pas disponible.">Quick Fix SAP</span>'
+            : ATC_QUICKFIX_SI_PAS_ETENDU.has(c.rule)
+            ? '<span class="qfSap cond" title="La note 2866977 pose une réserve : ADT ne '
+              + 'propose le Quick Fix que si l’extension de longueur n’est PAS mise en '
+              + 'œuvre — n° d’article à 18 caractères ou moins, montants non élargis. Sur '
+              + 'un système qui étend réellement, ce Quick Fix n’existe pas et la '
+              + 'correction ci-dessous est la seule automatisation.">Quick Fix SAP si non '
+              + 'étendu</span>'
             : '')
         + '</label>'
         + blocCopieHtml(c)

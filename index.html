@@ -13,7 +13,7 @@
     - toute redistribution, mise a disposition ou publication
     - toute reutilisation de tout ou partie du code dans un autre produit
 
-  Build : 2026-09-09
+  Build : 2026-09-17
   L'empreinte SHA-256 de la version authentique est fournie separement
   (fichier .sha256). Un exemplaire dont l'empreinte differe a ete modifie.
 
@@ -657,7 +657,7 @@ html[data-theme="dark"] .fixPre{background:#191920}
 <footer class="wrap">
   <kbd>/</kbd> pour chercher · <kbd>Échap</kbd> pour effacer · recherche insensible à la casse, sous-chaîne.
   <div class="legal">
-    © 2026 Codilog — build 2026-09-09.
+    © 2026 Codilog — build 2026-09-17.
     Usage interne réservé à Codilog. Modification, redistribution et
     réutilisation soumises à autorisation écrite de Codilog.
   </div>
@@ -802,7 +802,7 @@ const NOTE_CATALOG = [
          + "NUMC7, dont il ne faut reprendre que les trois derniers chiffres pour "
          + "reconstruire un nom d’include ; et côté dictionnaire, les champs "
          + "ajoutés à KONV, à reporter sur PRCS_ELEMENTS_DATA et sur la vue V_KONV"},
-  {id: "2270419", note: "2270419", domain: "atc",    cls: "fmod",
+  {id: "2389136", note: "2389136", domain: "atc",    cls: "fmod",
    label: "Compte général et nature comptable fusionnés",
    // Seule note du catalogue a ne rien corriger : elle signale, et c'est
    // tout. L'affichage doit le dire, sans quoi « Corrigé ici » promettrait
@@ -813,8 +813,9 @@ const NOTE_CATALOG = [
        + "dit de quel type de compte il s’agit. En regard, CSKA, CSKB et CSKU ne "
        + "s’alimentent plus par du code, l’imputation par défaut de CSKB est passée "
        + "dans TKA3A, TKSKA est vidée, T004-INTEG_CO n’a plus d’objet et KA01 à KA06 "
-       + "renvoient sur FS00. Le détail technique de la reprise est dans la note "
-       + "2389136.",
+       + "renvoient sur FS00. Le point de simplification est la note 2270419 ; c’est "
+       + "sous 2389136 que le contrôle ATC remonte le constat, et c’est donc ce "
+       + "numéro qui sert de clé ici.",
    couvre: "les écritures directes sur les tables de maître, les champs et tables "
          + "devenus obsolètes, les lectures dont le périmètre change, et les appels "
          + "aux transactions KA0x",
@@ -3012,19 +3013,19 @@ const ATC_RULE_NOTE = {
   "SELECT sur VBUP": "2198647",
   "VBTYP (categorie de document)": "2198647",
   "VBFA ORDER BY PRIMARY KEY": "2198647",
-  "Ecriture sur CSKA / CSKB / CSKU": "2270419",
-  "Ecriture sur SKA1 / SKB1 / SKAT": "2270419",
-  "SELECT sur SKA1": "2270419",
-  "SELECT sur SKB1": "2270419",
-  "SELECT sur SKAT": "2270419",
-  "CSKB-AUFNR / CSKB-KOSTL": "2270419",
-  "T004-INTEG_CO": "2270419",
-  "TKSKA (table videe)": "2270419",
-  "SKB1-XKRES": "2270419",
-  "CALL TRANSACTION KA01": "2270419",
-  "CALL TRANSACTION KA02": "2270419",
-  "CALL TRANSACTION KA03": "2270419",
-  "CALL TRANSACTION KA06": "2270419",
+  "Ecriture sur CSKA / CSKB / CSKU": "2389136",
+  "Ecriture sur SKA1 / SKB1 / SKAT": "2389136",
+  "SELECT sur SKA1": "2389136",
+  "SELECT sur SKB1": "2389136",
+  "SELECT sur SKAT": "2389136",
+  "CSKB-AUFNR / CSKB-KOSTL": "2389136",
+  "T004-INTEG_CO": "2389136",
+  "TKSKA (table videe)": "2389136",
+  "SKB1-XKRES": "2389136",
+  "CALL TRANSACTION KA01": "2389136",
+  "CALL TRANSACTION KA02": "2389136",
+  "CALL TRANSACTION KA03": "2389136",
+  "CALL TRANSACTION KA06": "2389136",
   "SELECT sans ORDER BY": "ORDRE",
   "DELETE ADJACENT DUPLICATES sans tri": "ORDRE",
   "LOOP AT ... AT sans tri": "ORDRE",
@@ -3264,7 +3265,7 @@ function reecrireVersVueCds(brutes, code, source, vue){
   return {lignes: sorties, zone, motCle, aInto, strictOk};
 }
 
-/* Tables du dictionnaire touchees par la fusion compte / nature (2270419).
+/* Tables du dictionnaire touchees par la fusion compte / nature (2389136).
    Un identifiant qui porte exactement l'un de ces noms est la table : on ne
    baptise pas une table interne CSKA, et le doute vaut mieux que le
    silence — le constat n'ecrit rien, il ne coute qu'une lecture. */
@@ -3287,7 +3288,7 @@ function tableEcrite(code, connues){
 }
 
 /**
- * Constats de la fusion compte general / nature comptable (note 2270419).
+ * Constats de la fusion compte general / nature comptable (note 2389136).
  *
  * <p>Rien n'est corrige ici, et c'est le fond du sujet. Ce que la note
  * demande — passer par une BAPI, refaire un batch input sur d'autres ecrans,
@@ -3589,12 +3590,18 @@ function atcApplyRules(code, targets, ctx, lengths, prefix){
 
     const sorties = brutes.map(ligne => {
       if (/^\*/.test(ligne)) return ligne;              // ligne commentee
-      if (/\bEXPORTING\b/i.test(ligne)) dansExporting = true;
-      else if (/\b(IMPORTING|CHANGING|TABLES|EXCEPTIONS)\b/i.test(ligne)) dansExporting = false;
+
+      // La section se lit sur le code seul : un commentaire qui nomme
+      // IMPORTING ne doit pas fermer l'EXPORTING en cours. Et le
+      // commentaire de fin de ligne est mis de cote avant l'analyse, sinon
+      // il finit a l'interieur du CONV #( ) et le code ne compile plus.
+      const coupe = atcStripComment(ligne);
+      if (/\bEXPORTING\b/i.test(coupe.code)) dansExporting = true;
+      else if (/\b(IMPORTING|CHANGING|TABLES|EXCEPTIONS)\b/i.test(coupe.code)) dansExporting = false;
       if (!dansExporting) return ligne;
 
       // « nom = valeur », le point final eventuel mis de cote.
-      const m2 = /^(\s*)([A-Za-z_]\w*)(\s*=\s*)([^.]+?)(\s*\.?\s*)$/.exec(ligne);
+      const m2 = /^(\s*)([A-Za-z_]\w*)(\s*=\s*)([^.]+?)(\s*\.?\s*)$/.exec(coupe.code);
       if (!m2) return ligne;
       const [, blanc, nom, egal, valeur, fin] = m2;
       if (!valeur.trim() || /^CONV\b/i.test(valeur.trim())) return ligne;
@@ -3604,7 +3611,7 @@ function atcApplyRules(code, targets, ctx, lengths, prefix){
       if (!vise) return ligne;
       touche = true;
       if (!champConverti) champConverti = nom + ' ' + valeur;
-      return blanc + nom + egal + 'CONV #( ' + valeur.trim() + ' )' + fin;
+      return blanc + nom + egal + 'CONV #( ' + valeur.trim() + ' )' + fin + coupe.comment;
     });
 
     if (touche){
@@ -4304,9 +4311,10 @@ const CLE_PRC = ['KNUMV', 'KPOSN', 'STUNR', 'ZAEHK'];
     if (fait) return {rule: 'VBFA ORDER BY PRIMARY KEY', enPlace: true, lines: sorties};
   }
 
-  // 12g. Compte general et nature comptable fusionnes (note 2270419, detail
-  //    technique dans la 2389136). Uniquement des constats — voir
-  //    constatFusionCompte pour ce qui les distingue des conversions.
+  // 12g. Compte general et nature comptable fusionnes. Le worklist en fait
+  //    la note 2270419, mais l'export ATC du systeme rattache le constat a
+  //    la 2389136 : on suit l'ATC, c'est lui qui declenche la reprise.
+  //    Uniquement des constats — voir constatFusionCompte.
   //
   //    Places avant les regles d'ordre : un SELECT sur SKA1 sans ORDER BY a
   //    les deux defauts, mais le changement de perimetre est le plus grave
